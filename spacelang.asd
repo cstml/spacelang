@@ -7,12 +7,11 @@
   :version "0.0.1"
   :serial t
   :depends-on (:alexandria
+               :str
                :fiveam
                :cl-punch
-               :for
-               :parseq)
+               :smug)
   :components ((:file "package")
-               (:file "parser")
                (:file "spacelang")))
 
 (asdf:defsystem #:spacelang/test
