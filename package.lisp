@@ -2,4 +2,8 @@
 
 (defpackage #:spacelang
   (:use #:cl
-        #:alexandria))
+        #:smug
+        #:str
+        #:alexandria)
+  (:shadowing-import-from :alexandria "EMPTYP")
+  (:export #:space!))
