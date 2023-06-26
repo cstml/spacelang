@@ -12,6 +12,7 @@
                :cl-punch
                :smug)
   :components ((:file "package")
+               (:file "parser")
                (:file "spacelang")))
 
 (asdf:defsystem #:spacelang/test

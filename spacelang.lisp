@@ -41,7 +41,6 @@
 
 (defvar *debug-mode* nil)
 
-
 ;; Printing
 (defun print-stack! ()
   "Prints the current stack."
@@ -97,6 +96,14 @@
     (0 t)
     (t nil)))
 
+(defun enter-collect-then (more-terms after-fn)
+  (funcall after-fn (collect-then (funcall more-terms) more-terms)))
+
+(defun collect-then (term more-terms)
+  (case term
+        (1 '(1))
+        (t (cons term (collect-then (funcall more-terms) more-terms)))))
+
 (defgeneric 1-evaluate (term)
   (:documentation "Evaluate a spacelang term."))
 
@@ -118,42 +125,95 @@
 (defmethod evaluate ((term string))
   (push! term))
 
+(defun f2 (f)
+  (let ((t1 (pop!))
+        (t2 (pop!)))
+    (push! (funcall f t1 t2))))
+
+(defmethod evaluate ((term (eql :+)))
+  (f2 #'+))
+
+(defmethod evaluate ((term (eql :*)))
+  (f2 #'*))
+
+(defmethod evaluate ((term (eql :-)))
+  (f2 #'-))
+
+(defmethod evaluate ((term (eql :/)))
+  (f2 #'/))
+
+(defmethod evaluate ((term (eql :/)))
+  (f2 #'/))
+
+(defmethod evaluate ((term (eql :bind-term)))
+  (let ((binding (pop!))
+               (term (pop!)))
+           (if (and (= 1 (length binding))
+                    (eql 'symbol (type-of (car binding))))
+               (set-word! (car binding) term)
+               (error "Cannot use term \" ~a \" as a binder." binding))))
+
 (defmethod evaluate ((term symbol))
-  (labels ((f2 (f) (let ((t1 (pop!))
-                         (t2 (pop!)))
-                     (push! (funcall f t1 t2))))
+  (labels
+      ((f2 (f)
+         (let ((t1 (pop!))
+               (t2 (pop!)))
+           (push! (funcall f t1 t2))))
 
-           (f1 (f) (let ((t1 (pop!)))
-                     (funcall f t1)))
+       (f1 (f)
+         (let ((t1 (pop!)))
+           (funcall f t1)))
 
-           (space-if () (let ((t1 (pop!))
-                              (t2 (pop!))
-                              (t3 (pop!)))
-                          (if (space-nilp t1)
-                              (push! t3)
-                              (push! t2)))))
+       (bind-term ()
+         )
+
+       (space-if ()
+         (let ((t1 (pop!))
+               (t2 (pop!))
+               (t3 (pop!)))
+           (if (space-nilp t1)
+               (push! t3)
+               (push! t2))))
+
+       (read-terms ()
+           (let ((terms (parse-terms (read-line))))
+             (mapcar #'evaluate terms)))
+
+       (cons-terms ()
+         (let ((binding (pop!))
+               (term (pop!)))
+           (if (and (= 1 (length binding))
+                    (eql 'symbol (type-of (car binding))))
+               (set-word! (car binding) (cons term (get-word!? (car binding)))))))
+
+       (print-last-term ()
+         (format t "~A~%" (pop!))))
+
     (case term
+      ;; math opps
       (-  (f2 #'-))
       (+  (f2 #'+))
       (*  (f2 #'*))
       (/  (f2 #'/))
+      (>  (f2 #'>))
+      (<  (f2 #'<))
+      (<  (f2 #'<))
+      ;; eval
       (!  (f1 #'1-EVALUATE))
+      (eval-term (evaluate '!))
+      ;; dictionary
       (du (push-dictionary!))
       (dd (pop-dictionary!))
+      ;; binding
       (bind-term (evaluate '^))
-      (eval-term (evaluate '!))
-      (^  (let ((binding (pop!))
-                (term (pop!)))
-            (if (and (= 1 (length binding))
-                     (eql 'symbol (type-of (car binding))))
-                (set-word! (car binding) term)
-                (error "Cannot use term \" ~a \" as a binder." binding))))
+      (^  (bind-term))
+      ;; io
+      (slurp (read-terms))
+      (print (print-last-term))
+      ;; if
       (if (space-if))
-      (cons (let ((binding (pop!))
-                  (term (pop!)))
-              (if (and (= 1 (length binding))
-                       (eql 'symbol (type-of (car binding))))
-                  (set-word! (car binding) (cons term (get-word!? (car binding)))))))
+      ;; cons
+      (cons (cons-terms))
       (t  (evaluate (get-word! term))))))
 
 (defmethod evaluate ((term (eql :r)))
@@ -177,6 +237,9 @@
   (if *debug-mode* (setf *debug-mode* nil)
       (setf *debug-mode* t)))
 
+(defmethod evaluate ((term (eql :bye)))
+  (sb-ext:exit))
+
 (defmethod evaluate ((term (eql :load)))
   (let ((location (pop!)))
     (read-file-into-string location)))
@@ -191,11 +254,13 @@
 :s - to print the stack.
 :d - to print the dictionary.
 :debug - to switch debug mode on/off ~~ print memory after each read.
+:bye - to exit the program at any time.
 "))
 
 (defun handle-err (err)
   (case (type-of err)
-    ('SB-PCL::NO-APPLICABLE-METHOD-ERROR (format t "Sorry, don't know what to do with that!~%"))))
+    ('SB-PCL::NO-APPLICABLE-METHOD-ERROR
+     (format t "Sorry, don't know what to do with that!~%"))))
 
 (defun e (&rest terms)
   "Main evaluating function."
@@ -208,103 +273,67 @@
       (reset-stack)
       (format t "Stack reset.~%"))))
 
-(defun .whitespace ()
-  (.map 'string (.char= #\ )))
+(defun collect-terms (slurp-fn remaining acc)
+  (labels
+      ((proceed (term remaining acc)
+         (progn
+           (print term)
+           (print remaining)
+           (cond
+             ((eql :READER-UN-DELAY term)
+              (values (reverse  acc) remaining))
 
-(defun .read (f)
-  (.prog2 (.optional (.whitespace))
-          f
-          (.optional (.whitespace))))
+             ((eql :READER-DELAY term)
+              (multiple-value-bind (term-2 remaining-2)
+                  (collect-terms slurp-fn remaining '())
+                (collect-terms slurp-fn remaining-2 (cons term-2 acc))))
 
-(defun .number ()
-  (.let* ((n (.map 'string (.is #'cl:digit-char-p))))
-    (.identity (read-from-string n))))
+             (t
+              (collect-terms slurp-fn remaining (cons term acc)))))))
+   (if (emptyp remaining)
+       (multiple-value-bind (term remaining) (parse (.term) (funcall slurp-fn))
+         (proceed term remaining acc))
+       (multiple-value-bind (term remaining) (parse (.term) remaining)
+         (proceed term remaining acc)))))
 
-(defun .word ()
-  (.let* ((n (.map 'string (.or (.is #'cl:upper-case-p)
-                                (.is #'cl:lower-case-p)))))
-    (.identity `,(read-from-string n))))
+(defun prompt ()
+  (when *DEBUG-MODE* (print-memory!))
+  (format t "~% > "))
 
-(defun .opp ()
-  (.let* ((o (.map 'string
-                   (.or (.char= #\+)
-                        (.char= #\-)
-                        (.char= #\*)
-                        (.char= #\/)))))
-    (.identity (read-from-string o))))
+(defun run-reader! (slurp-fn remaining)
+  (labels
+      ((eval-fn (slurp-fn remaining)
+         (multiple-value-bind (term remaining)
+             (parse (.term) remaining)
+           (progn
+             (print  `(:term ,term))
+             (cond
+               ((eql :Reader-delay term) (multiple-value-bind (term remaining)
+                                             (collect-terms slurp-fn remaining '())
+                                           (progn
+                                             (evaluate term)
+                                             (continue-eval slurp-fn remaining))))
+               ((eql :reader-un-delay term)  (error "Cannot undelay further."))
+               (t (progn
+                    (evaluate term)
+                    (continue-eval slurp-fn remaining)))))))
 
-(defun .bind-term ()
-  (.let* ((_ (.map 'string (.char= #\^))))
-    (.identity 'bind-term)))
+       (continue-eval (slurp-fn remaining)
+         (if (emptyp remaining)
+             (progn
+               (prompt)
+               (eval-fn slurp-fn (funcall slurp-fn)))
+             (eval-fn slurp-fn remaining))))
 
-(defun .eval-term ()
-  (.let* ((_ (.map 'string (.char= #\!))))
-    (.identity 'eval-term)))
-
-(defun .cons ()
-  (.let* ((_ (.char= #\:))
-          (_ (.char= #\:)))
-    (.identity 'cons)))
-
-(defun .dict-up ()
-  (.let* ((_ (.char= #\()))
-    (.identity 'du)))
-
-(defun .dict-down ()
-  (.let* ((_ (.char= #\))))
-    (.identity 'dd)))
-
-(defun .vector ()
-  (.let* ((_ (.read (.char= #\[ )))
-          (ts (.first (.map 'list (.term))))
-          (_ (.read (.char= #\]))))
-    (.identity ts)))
-
-(defun .keyword ()
-  (.let* ((n (.and
-              (.char= #\:)
-              (.map 'string (.or (.is #'cl:upper-case-p)
-                                 (.is #'cl:lower-case-p))))))
-    (.identity (read-from-string (str:concat ":" n)))))
-
-(defun .string ()
-  (.let* ((_ (.read (.char= #\")))
-          (ts (.map 'string (.is #'cl:characterp)))
-          (_ (.read (.char= #\"))))
-    (.identity ts)))
-
-(defun .unknown ()
-  (.let* ((nxt (.item)))
-    (error (format nil "Don't know how to parse: \"~a\"." nxt))))
-
-(defun .term ()
-  (.or
-   (.read (.word))
-   (.read (.keyword))
-   (.read (.number))
-   (.read (.opp))
-   (.read (.vector))
-   (.read (.dict-up))
-   (.read (.dict-down))
-   (.read (.cons))
-   (.read (.bind-term))
-   (.read (.eval-term))
-   (.read (.string))))
-
-(defun .terms ()
-  (.map 'list (.term)))
-
-(defun parse-terms (str)
-  (handler-case
-      (smug:parse (.or (.terms) (.unknown)) str)
-    (error (err)
-      (format t "Parser Error! ~%")
-      (format t "~A ~%" err))))
+    (continue-eval slurp-fn remaining)))
 
 (defun space! ()
-  (format t "~% > ")
-  (let* ((str (read-line))
-         (read-terms (parse-terms str)))
-    (apply #'e read-terms)
-    (when *DEBUG-MODE* (print-memory!))
-    (space!)))
+  (handler-case
+      (run-reader! #'read-line "")
+    (error (err)
+      (handle-err err)
+      (format t "Error Type: ~s.~%" (type-of err))
+      (format t "Error: ~A.~%" err)
+      (reset-stack)
+      (format t "Stack reset.~%")
+      (space!))))
