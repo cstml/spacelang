@@ -39,16 +39,38 @@
 (defparameter *memory*
   (make-instance 'space-memory))
 
+(defparameter *trace-mode* nil)
+
+(defparameter *silent-rebind-mode* t)
+
 (defvar *debug-mode* nil)
 
 ;; Printing
+(defun pretty-term (term)
+  (cond
+    ((consp term)
+     (str:concat
+      (format nil "[")
+      (apply #'str:concat  (loop :for x :in term :collect (pretty-term x)))
+      (format nil "]")))
+
+    (t
+     (format nil " ~a "term))))
+
 (defun print-stack! ()
   "Prints the current stack."
-  (format t "stack> ~s ~%" (reverse (stack *memory*))))
+  (format t "stack: ~%")
+  (loop :for term :in (reverse (stack *memory*))
+        :do (format t "~a" (pretty-term term)))
+  (format t "~%~%"))
 
 (defun print-dictionary! ()
   "Prints the current dictionary."
-  (format t "dicty> ~A ~%" (hash-table-plist (dictionary *memory*))))
+  (format t "dicty> ~%")
+  (loop :for x :in (hash-table-alist (dictionary *memory*))
+        :do (let ((binder (car x))
+                  (term (cdr x)))
+              (format t "~A ~~ ~A ~%" binder (pretty-term term)))))
 
 (defun print-memory! ()
   "Prints the current memory."
@@ -66,9 +88,9 @@
   (push term (stack *memory*)))
 
 (defun pop! ()
-  (let ((term (pop (stack *memory*))))
-    (if term term
-        (error "Stack underflow!"))))
+  (if (/= 0  (length (stack *memory*)))
+      (pop (stack *memory*))
+      (error "Stack underflow!")))
 
 ;; Dictionary
 (defun get-word! (s-word)
@@ -85,7 +107,8 @@
   (multiple-value-bind (_ exists) (gethash s-word (dictionary *memory*))
     (if exists
         (progn
-          (format t "Rebinding word \"~s\".~%" s-word)
+          (when (not *silent-rebind-mode*)
+            (format t "Rebinding word \"~s\".~%" s-word))
           (setf (gethash s-word (dictionary *memory*)) term))
         (setf (gethash s-word (dictionary *memory*)) term))))
 
@@ -94,6 +117,8 @@
   (case term
     ('() t)
     (0 t)
+    (nil t)
+    ;; everything else is a truthy value
     (t nil)))
 
 (defun enter-collect-then (more-terms after-fn)
@@ -115,6 +140,9 @@
 
 (defgeneric evaluate (term)
   (:documentation "Evaluate a spacelang term."))
+
+(defmethod evaluate :before (term)
+  (when *trace-mode* (format t "~~ ~s ~%" term)))
 
 (defmethod evaluate ((term number))
   (push! term))
@@ -145,6 +173,21 @@
 (defmethod evaluate ((term (eql :/)))
   (f2 #'/))
 
+(defmethod evaluate ((term (eql :<)))
+  (f2 #'<))
+
+(defmethod evaluate ((term (eql :>)))
+  (f2 #'>))
+
+(defmethod evaluate ((term (eql :<=)))
+  (f2 #'<=))
+
+(defmethod evaluate ((term (eql :>=)))
+  (f2 #'>=))
+
+(defmethod evaluate ((term (eql :=)))
+  (f2 #'eql))
+
 (defmethod evaluate ((term (eql :bind-term)))
   (let ((binding (pop!))
                (term (pop!)))
@@ -153,31 +196,38 @@
                (set-word! (car binding) term)
                (error "Cannot use term \" ~a \" as a binder." binding))))
 
-(defmethod evaluate ((term symbol))
-  (labels
-      ((f2 (f)
-         (let ((t1 (pop!))
-               (t2 (pop!)))
-           (push! (funcall f t1 t2))))
-
-       (f1 (f)
-         (let ((t1 (pop!)))
-           (funcall f t1)))
-
-       (bind-term ()
-         )
-
-       (space-if ()
-         (let ((t1 (pop!))
+(defmethod evaluate ((term (eql :if)))
+  (let ((t1 (pop!))
                (t2 (pop!))
                (t3 (pop!)))
            (if (space-nilp t1)
                (push! t3)
                (push! t2))))
 
-       (read-terms ()
-           (let ((terms (parse-terms (read-line))))
-             (mapcar #'evaluate terms)))
+(defun f1 (f)
+  (let ((t1 (pop!)))
+    (funcall f t1)))
+
+(defmethod evaluate ((term (eql :eval-term)))
+  (f1 #'1-EVALUATE))
+
+(defmethod evaluate ((term (eql :describe)))
+  (let ((binding (pop!)))
+    (if (and (= 1 (length binding))
+             (eql 'symbol (type-of (car binding))))
+        (format t "~a ~~ ~a ~%" (car binding) (get-word! (car binding)))
+        (error "Cannot use term \" ~a \" as a binder." binding))))
+
+(defmethod evaluate ((term (eql :slurp)))
+  (let ((terms (parse-terms (read-line))))
+    (mapcar #'evaluate terms)))
+
+(defmethod evaluate ((term symbol))
+  (labels
+      ((f2 (f)
+         (let ((t1 (pop!))
+               (t2 (pop!)))
+           (push! (funcall f t1 t2))))
 
        (cons-terms ()
          (let ((binding (pop!))
@@ -197,21 +247,16 @@
       (/  (f2 #'/))
       (>  (f2 #'>))
       (<  (f2 #'<))
-      (<  (f2 #'<))
       ;; eval
-      (!  (f1 #'1-EVALUATE))
+
       (eval-term (evaluate '!))
       ;; dictionary
       (du (push-dictionary!))
       (dd (pop-dictionary!))
       ;; binding
-      (bind-term (evaluate '^))
-      (^  (bind-term))
       ;; io
       (slurp (read-terms))
       (print (print-last-term))
-      ;; if
-      (if (space-if))
       ;; cons
       (cons (cons-terms))
       (t  (evaluate (get-word! term))))))
@@ -221,8 +266,8 @@
   (format t "Memory reset.~%"))
 
 (defmethod evaluate ((term (eql :rs)))
-  (reset-memory)
-  (format t "Memory reset.~%"))
+  (reset-stack)
+  (format t "Stack reset.~%"))
 
 (defmethod evaluate ((term (eql :m)))
   (print-memory!))
@@ -240,9 +285,13 @@
 (defmethod evaluate ((term (eql :bye)))
   (sb-ext:exit))
 
+(defmethod evaluate ((term (eql :noop)))
+  nil)
+
 (defmethod evaluate ((term (eql :load)))
   (let ((location (pop!)))
-    (read-file-into-string location)))
+    (run-reader! #'read-line
+                 (read-file-into-string location))))
 
 (defmethod evaluate ((term (eql :help)))
   (format t "
@@ -277,8 +326,6 @@
   (labels
       ((proceed (term remaining acc)
          (progn
-           (print term)
-           (print remaining)
            (cond
              ((eql :READER-UN-DELAY term)
               (values (reverse  acc) remaining))
@@ -298,22 +345,26 @@
 
 (defun prompt ()
   (when *DEBUG-MODE* (print-memory!))
-  (format t "~% > "))
+  (format t "~% ~a > " (length (stack *memory*)))
+  (finish-output))
 
 (defun run-reader! (slurp-fn remaining)
   (labels
       ((eval-fn (slurp-fn remaining)
-         (multiple-value-bind (term remaining)
-             (parse (.term) remaining)
+         (multiple-value-bind
+               (term remaining) (parse (.term) remaining)
            (progn
-             (print  `(:term ,term))
              (cond
-               ((eql :Reader-delay term) (multiple-value-bind (term remaining)
-                                             (collect-terms slurp-fn remaining '())
-                                           (progn
-                                             (evaluate term)
-                                             (continue-eval slurp-fn remaining))))
-               ((eql :reader-un-delay term)  (error "Cannot undelay further."))
+               ((eql :reader-delay term)
+                (multiple-value-bind (term remaining)
+                    (collect-terms slurp-fn remaining '())
+                  (progn
+                    (evaluate term)
+                    (continue-eval slurp-fn remaining))))
+
+               ((eql :reader-un-delay term)
+                (error "Cannot undelay further."))
+
                (t (progn
                     (evaluate term)
                     (continue-eval slurp-fn remaining)))))))
@@ -328,6 +379,10 @@
     (continue-eval slurp-fn remaining)))
 
 (defun space! ()
+  (let ((args (uiop:command-line-arguments)))
+    (when args
+        (progn (evaluate (first args))
+               (evaluate :load))))
   (handler-case
       (run-reader! #'read-line "")
     (error (err)

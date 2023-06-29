@@ -5,14 +5,16 @@
       ((_ (.string-equal "{"))
        (c (.map 'string (.is #'cl:characterp)))
        (_ (.string-equal "}")))
-    (.identity c)))
+    (.identity :noop)))
 
 (defun .whitespace ()
-  (.map 'string
-        (.or
-         (.char= #\	)
-         (.char= #\)
-         (.char= #\ ))))
+  (.or (.map 'string
+             (.or
+              (.char= #\	)
+              (.char= #\)
+              (.char= #\ )))
+       (.string= "
+")))
 
 (defun .read (f)
   (.prog2 (.optional (.whitespace))
@@ -30,13 +32,16 @@
       (.identity `,(read-from-string n)))))
 
 (defun .opp ()
-  (.let* ((o (.map 'string
-                   (.or (.char= #\+)
-                        (.char= #\-)
-                        (.char= #\<)
-                        (.char= #\>)
-                        (.char= #\*)
-                        (.char= #\/)))))
+  (.let* ((o (.or (.map 'string
+                        (.or (.char= #\+)
+                             (.char= #\-)
+                             (.char= #\<)
+                             (.char= #\>)
+                             (.char= #\=)
+                             (.char= #\*)
+                             (.char= #\/)))
+                  (.string= "<=")
+                  (.string= ">="))))
     (.identity (read-from-string (str:concat ":" o)))))
 
 (defun .bind-term ()
@@ -81,19 +86,41 @@
           (_ (.read (.char= #\"))))
     (.identity ts)))
 
+(defun .slurp ()
+  (.let* ((_ (.string= "slurp")))
+    (.identity :slurp)))
+
 (defun .print ()
   (.let* ((_ (.char= #\.)))
     (.identity 'print)))
 
 (defun .unknown ()
   (.let* ((nxt (.item)))
-    (error (format nil "Don't know how to parse: \"~a\"." nxt))))
+    (cond
+      ((eql nxt #\~) (error (format nil "Don't know how to parse: \"~~\" ")))
+      (t (error (format nil "Don't know how to parse: \"~a\"." nxt))))))
+
+(defun .if ()
+  (.let* ((_ (.string= "if")))
+    (.identity :if)))
+
+(defun .noop ()
+  (.let* ((_ (.or
+              (.char= #\ )
+              (.char= #\))))
+    (.identity :noop)))
+
+(defun .describe ()
+  (.let* ((_ (.char= #\~)))
+    (.identity :describe)))
 
 (defun .term ()
   (.or
-   (.read (.word))
+   (.read (.if))
    (.read (.keyword))
    (.read (.number))
+   (.read (.slurp))
+   (.read (.word))
    (.read (.opp))
    (.read (.dict-up))
    (.read (.dict-down))
@@ -103,7 +130,11 @@
    (.read (.string))
    (.read (.reader-delay))
    (.read (.reader-un-delay))
-   (.read (.print))))
+   (.read (.print))
+   (.read (.describe))
+   ;;   (.read (.noop))
+   (.read (.comment))
+   (.read (.unknown))))
 
 (defun .terms ()
   (.map 'list (.term)))
