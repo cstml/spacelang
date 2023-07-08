@@ -14,10 +14,6 @@
           name = "compiler";
           src = self;
           buildInputs = with pkgs;[
-            sbcl
-            sbclPackages.alexandria
-            quicklispPackagesClisp.asdf
-            asdf
             gnumake
           ];
         };

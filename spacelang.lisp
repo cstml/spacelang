@@ -45,6 +45,7 @@
 
 (defvar *debug-mode* nil)
 
+(defvar *REPL-MODE* nil)
 ;; Printing
 (defun pretty-term (term)
   (cond
@@ -66,7 +67,7 @@
 
 (defun print-dictionary! ()
   "Prints the current dictionary."
-  (format t "dicty> ~%")
+  (format t "dicty: ~%")
   (loop :for x :in (hash-table-alist (dictionary *memory*))
         :do (let ((binder (car x))
                   (term (cdr x)))
@@ -74,8 +75,13 @@
 
 (defun print-memory! ()
   "Prints the current memory."
-  (print-stack!)
-  (print-dictionary!))
+  (labels ((print-sep! () (format t "~A~%" (repeat 80 "=")))
+           (newline! () (format t "~%")))
+    (newline!)
+    (print-sep!)
+    (print-stack!)
+    (print-dictionary!)
+    (print-sep!)))
 
 ;; Stack
 (defun get-stack! ()
@@ -211,12 +217,22 @@
 (defmethod evaluate ((term (eql :eval-term)))
   (f1 #'1-EVALUATE))
 
+(defun describe-term (binding)
+  (labels ((sep! () (format t "~a~%" (repeat 80 "="))))
+    (sep!)
+    (format t "Describing:~%")
+    (format t
+            "~a ~~ ~a ~%"
+            (car binding)
+            (pretty-term (get-word! (car binding))))
+    (sep!)))
+
 (defmethod evaluate ((term (eql :describe)))
   (let ((binding (pop!)))
     (if (and (= 1 (length binding))
              (eql 'symbol (type-of (car binding))))
-        (format t "~a ~~ ~a ~%" (car binding) (get-word! (car binding)))
-        (error "Cannot use term \" ~a \" as a binder." binding))))
+        (describe-term binding)
+        (error "Cannot use term \" ~a \" as a binder." (pretty-term binding)))))
 
 (defmethod evaluate ((term (eql :slurp)))
   (let ((terms (parse-terms (read-line))))
@@ -293,6 +309,9 @@
     (run-reader! #'read-line
                  (read-file-into-string location))))
 
+(defun read-file (location)
+  (read-file-into-string location))
+
 (defmethod evaluate ((term (eql :help)))
   (format t "
 :help - for help.
@@ -309,7 +328,8 @@
 (defun handle-err (err)
   (case (type-of err)
     ('SB-PCL::NO-APPLICABLE-METHOD-ERROR
-     (format t "Sorry, don't know what to do with that!~%"))))
+     (format t "Sorry, don't know what to do with that!~%"))
+    ('END-OF-FILE (evaluate :bye))))
 
 (defun e (&rest terms)
   "Main evaluating function."
@@ -345,7 +365,7 @@
 
 (defun prompt ()
   (when *DEBUG-MODE* (print-memory!))
-  (format t "~% ~a > " (length (stack *memory*)))
+  (when *REPL-MODE* (format t "~% ~a > " (length (stack *memory*))))
   (finish-output))
 
 (defun run-reader! (slurp-fn remaining)
