@@ -1,6 +1,8 @@
 { A simple example of a program }
+
 "Hello, this prints the first n fibonacci numbers
 How many numbers would you like to print?" print
+
 slurp [i] ^
 [ 1 i - [i] ^ ] [ decreaseI ] ^
 

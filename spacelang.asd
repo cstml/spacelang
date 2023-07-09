@@ -10,7 +10,8 @@
                :str
                :fiveam
                :cl-punch
-               :smug)
+               :smug
+               :bt-semaphore)
   :components ((:file "package")
                (:file "parser")
                (:file "spacelang")))

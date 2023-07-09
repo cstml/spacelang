@@ -4,6 +4,7 @@
   (:use #:cl
         #:smug
         #:str
-        #:alexandria)
+        #:alexandria
+        #:bt-semaphore)
   (:shadowing-import-from :alexandria "EMPTYP")
   (:export #:space!))
