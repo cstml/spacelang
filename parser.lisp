@@ -114,6 +114,10 @@
   (.let* ((_ (.char= #\~)))
     (.identity :describe)))
 
+(defun .send ()
+  (.let* ((_ (.char= #\$)))
+    (.identity :send)))
+
 (defun .term ()
   (.or
    (.read (.if))
@@ -125,6 +129,7 @@
    (.read (.dict-up))
    (.read (.dict-down))
    (.read (.cons))
+   (.read (.send))
    (.read (.bind-term))
    (.read (.eval-term))
    (.read (.string))
