@@ -44,47 +44,38 @@
 (defvar *REPL-MODE* nil)
 
 (defun reset-memory (memory)
-  (bt:with-recursive-lock-held (*universe-lock*)
-    (setf memory (make-instance 'space-memory
-                                :name (name memory)
-                                :parent-universe (parent-universe memory)))))
+  (setf memory (make-instance 'space-memory
+                              :name (name memory)
+                              :parent-universe (parent-universe memory))))
 
 (defun reset-stack (memory)
-  (bt:with-recursive-lock-held (*universe-lock*)
-    (setf (stack memory) '())))
+  (setf (stack memory) '()))
 
 (defun reset-inbox (memory)
-  (bt:with-recursive-lock-held (*universe-lock*)
-    (setf (inbox memory) '())))
+  (setf (inbox memory) '()))
 
 (defun push-dictionary! (memory)
-  (bt:with-recursive-lock-held (*universe-lock*)
-    (progn (format t "Pushing dictionary!~%")
-           (push (dictionary memory) (dictionary-level memory))
-           (setf (dictionary memory) (copy-hash-table (dictionary memory))))))
+  (format t "Pushing dictionary!~%")
+  (push (dictionary memory) (dictionary-level memory))
+  (setf (dictionary memory) (copy-hash-table (dictionary memory))))
 
 (defun pop-dictionary! (memory)
-  (bt:with-recursive-lock-held (*universe-lock*)
-   (format t "Popping dictionary!~%")
-   (let ((old-dictionary (pop (dictionary-level memory))))
-     (if old-dictionary
-         (setf (dictionary memory) old-dictionary)
-         (progn (format t "Last dictionary popped!~%")
-                (format t "Resetting dictionary!~%")
-                (setf (dictionary memory) (make-hash-table :test 'equalp)))))))
+  (format t "Popping dictionary!~%")
+  (let ((old-dictionary (pop (dictionary-level memory))))
+    (if old-dictionary
+        (setf (dictionary memory) old-dictionary)
+        (progn (format t "Last dictionary popped!~%")
+               (format t "Resetting dictionary!~%")
+               (setf (dictionary memory) (make-hash-table :test 'equalp))))))
 
 ;; Printing
 (defun pretty-term (term)
-  (bt:with-recursive-lock-held (*universe-lock*)
-    (cond
-      ((consp term)
-       (str:concat
-        (format nil "[")
-        (apply #'str:concat  (loop :for x :in term :collect (pretty-term x)))
-        (format nil "]")))
-
-     (t
-      (format nil " ~a "term)))))
+  (cond
+    ((consp term) (str:concat
+                   (format nil "[")
+                   (apply #'str:concat  (loop :for x :in term :collect (pretty-term x)))
+                   (format nil "]")))
+    (t (format nil " ~a "term))))
 
 (defun print-stack! (memory)
   "Prints the current stack."
@@ -140,38 +131,45 @@
 
 ;; Stack
 (defun get-stack! (memory)
-  (stack memory))
+  (bt:with-lock-held (*universe-lock*)
+    (stack memory)))
 
 (defun set-stack! (memory s)
-  (setf (stack memory) s))
+  (bt:with-lock-held (*universe-lock*)
+    (setf (stack memory) s)))
 
 (defun push! (memory term)
-  (push term (stack memory)))
+  (bt:with-lock-held (*universe-lock*)
+    (push term (stack memory))))
 
 (defun pop! (memory)
-  (if (/= 0  (length (stack memory)))
-      (pop (stack memory))
-      (error "Stack underflow!")))
+  (bt:with-lock-held (*universe-lock*)
+    (if (/= 0  (length (stack memory)))
+        (pop (stack memory))
+        (error "Stack underflow!"))))
 
 ;; Dictionary
 (defun get-word! (memory s-word)
-  (multiple-value-bind (result exists) (gethash s-word (dictionary memory))
-    (if exists
-        result
-        (error "Unbound Word: \"~s\" " s-word))))
+  (bt:with-lock-held (*universe-lock*)
+    (multiple-value-bind (result exists) (gethash s-word (dictionary memory))
+      (if exists
+          result
+          (error "Unbound Word: \"~s\" " s-word)))))
 
 ;; Dictionary
 (defun get-word!? (memory s-word)
-  (gethash s-word (dictionary memory)))
+  (bt:with-lock-held (*universe-lock*)
+    (gethash s-word (dictionary memory))))
 
 (defun set-word! (memory s-word term)
-  (multiple-value-bind (_ exists) (gethash s-word (dictionary memory))
-    (if exists
-        (progn
-          (when (not *silent-rebind-mode*)
-            (format t "Rebinding word \"~s\".~%" s-word))
-          (setf (gethash s-word (dictionary memory)) term))
-        (setf (gethash s-word (dictionary memory)) term))))
+  (bt:with-lock-held (*universe-lock*)
+    (multiple-value-bind (_ exists) (gethash s-word (dictionary memory))
+      (if exists
+          (progn
+            (when (not *silent-rebind-mode*)
+              (format t "Rebinding word \"~s\".~%" s-word))
+            (setf (gethash s-word (dictionary memory)) term))
+          (setf (gethash s-word (dictionary memory)) term)))))
 
 ;; Evaluation
 (defun space-nilp (term)
@@ -204,11 +202,13 @@
 
 (defmethod evaluate :before (memory term)
   (when *trace-mode* (format t "~~ ~s ~%" term))
-  (bt:acquire-recursive-lock *universe-lock*))
+  ;;(bt:acquire-recursive-lock *universe-lock*)
+  )
 
 (defmethod evaluate :after (memory term)
   (when *trace-mode* (format t "~~ ~s ~%" term))
-  (bt:release-recursive-lock *universe-lock*))
+  ;;(bt:release-recursive-lock *universe-lock*)
+  )
 
 (defmethod evaluate ((memory space-memory) (term number))
   "Pushes a term to the stack."
@@ -324,38 +324,6 @@ resulting term."
 (defmethod evaluate ((memory space-memory) (_term (eql :dictionary-down)))
   (pop-dictionary! memory))
 
-(defmethod evaluate ((memory space-memory) (term symbol))
-  (labels
-      ((cons-terms ()
-         (let ((binding (pop! memory))
-               (term (pop! memory)))
-           (if (and (= 1 (length binding))
-                    (eql 'symbol (type-of (car binding))))
-               (set-word! memory (car binding) (cons term (get-word!? memory (car binding)))))))
-
-       (print-last-term ()
-         (format t "~A~%" (pretty-term (pop! memory)))))
-
-    (case term
-      ;; math opps
-      (-  (f2 memory #'-))
-      (+  (f2 memory #'+))
-      (*  (f2 memory #'*))
-      (/  (f2 memory #'/))
-      (>  (f2 memory #'>))
-      (<  (f2 memory #'<))
-      ;; eval
-
-      (eval-term (evaluate memory '!))
-      ;; dictionary
-      (du (push-dictionary! memory))
-      (dd (pop-dictionary! memory))
-      ;; binding
-      (print (print-last-term))
-      ;; cons
-      (cons (cons-terms))
-      (t  (evaluate memory (get-word! memory term))))))
-
 (defmethod evaluate ((memory space-memory) (term (eql :r)))
   (reset-memory memory)
   (format t "Memory reset.~%"))
@@ -402,8 +370,7 @@ resulting term."
 :s - to print the stack.
 :d - to print the dictionary.
 :debug - to switch debug mode on/off ~~ print memory after each read.
-:bye - to exit the program at any time.
-"))
+:bye - to exit the program at any time.~%"))
 
 (defun handle-err (err)
   (case (type-of err)
@@ -426,11 +393,11 @@ resulting term."
 
              (t
               (collect-terms slurp-fn remaining (cons term acc)))))))
-   (if (emptyp remaining)
-       (multiple-value-bind (term remaining) (parse (.term) (funcall slurp-fn))
-         (proceed term remaining acc))
-       (multiple-value-bind (term remaining) (parse (.term) remaining)
-         (proceed term remaining acc)))))
+    (if (emptyp remaining)
+        (multiple-value-bind (term remaining) (parse (.term) (funcall slurp-fn))
+          (proceed term remaining acc))
+        (multiple-value-bind (term remaining) (parse (.term) remaining)
+          (proceed term remaining acc)))))
 
 (defun prompt (memory)
   (when *DEBUG-MODE* (print-universe!))
@@ -532,8 +499,7 @@ resulting term."
 (defun add-machine (universe name machine)
   (setf (gethash name (space-instances universe)) machine))
 
-(defparameter *universe*
-  (init-universe))
+(defparameter *universe* (init-universe))
 
 (defun get-memory (memory-name universe)
   (gethash memory-name
@@ -541,44 +507,47 @@ resulting term."
 
 (defun send-to-inbox (name-from to-name message universe)
   (let ((msg (make-instance 'message :sender name-from :contents message)))
-    ; The machine at the address hasn't started
-    (when (not (get-memory to-name universe))
-      (progn
-        (setf (gethash to-name (space-instances universe))
-              (make-instance 'space-memory :name to-name :parent-universe universe))
-        (let ((top-level *standard-output*)
-              (memory (gethash to-name (space-instances universe))))
-          (bt:make-thread
-           (lambda ()
-             (handler-case
-                 (run-reader-term! memory (lambda () (pop-inbox memory)))
-               (error (err)
-                 (handle-err err)
-                 (format top-level "In Machine: ~a.~%" to-name)
-                 (format top-level "Error Type: ~s.~%" (type-of err))
-                 (format top-level "Error: ~A.~%" err)
-                 (reset-stack memory)
-                 (format top-level "Stack reset.~%")
-                 (reset-inbox memory)
-                 (format top-level "Inbox reset.~%")
-                 (run-reader-term! memory (lambda () (pop-inbox memory))))))))))
+    (bt:with-lock-held (*universe-lock*)
+     (progn
+       ;; The machine at the address hasn't been initialised/started.
+       (when (not (get-memory to-name universe))
+         (progn
+           (setf (gethash to-name (space-instances universe))
+                 (make-instance 'space-memory :name to-name :parent-universe universe))
+           (let ((top-level *standard-output*)
+                 (memory (gethash to-name (space-instances universe))))
+             (bt:make-thread
+              (lambda ()
+                (handler-case
+                    (run-reader-term! memory (lambda () (pop-inbox memory)))
+                  (error (err)
+                    (handle-err err)
+                    (format top-level "In Machine: ~a.~%" to-name)
+                    (format top-level "Error Type: ~s.~%" (type-of err))
+                    (format top-level "Error: ~A.~%" err)
+                    (reset-stack memory)
+                    (format top-level "Stack reset.~%")
+                    (reset-inbox memory)
+                    (format top-level "Inbox reset.~%")
+                    (run-reader-term! memory (lambda () (pop-inbox memory))))))))))
 
-    (setf (inbox (gethash to-name (space-instances universe)))
-          (concatenate 'list (inbox (gethash to-name (space-instances universe)))
-                       (list msg)))))
+       (setf (inbox (gethash to-name (space-instances universe)))
+             (concatenate 'list (inbox (gethash to-name (space-instances universe)))
+                          (list msg)))))))
 
 (defun pop-inbox (memory)
-  (let ((next-term (pop (inbox memory))))
-    (if next-term
-        (contents next-term)
-        :noop)))
+  (bt:with-lock-held (*universe-lock*)
+    (let ((next-term (pop (inbox memory))))
+      (if next-term
+          (contents next-term)
+          :noop))))
 
 (defun space! ()
   (let ((args (uiop:command-line-arguments))
         (home-memory (get-memory :home *universe*)))
     (when args
-        (progn (evaluate home-memory (first args))
-               (evaluate home-memory :load)))
+      (progn (evaluate home-memory (first args))
+             (evaluate home-memory :load)))
     (handler-case
         (run-reader! home-memory #'read-line "")
       (error (err)
@@ -588,9 +557,3 @@ resulting term."
         (reset-stack home-memory)
         (format t "Stack reset.~%")
         (space!)))))
-
-; (require :sb-cover)
-; (declaim (optimize sb-cover:store-coverage-data))
-; (asdf:oos 'asdf:load-op :spacelang :force t)
-; (sb-cover:report "coverage/")
-; (declaim (optimize (sb-cover:store-coverage-data 0)))
