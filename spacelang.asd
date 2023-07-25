@@ -25,7 +25,8 @@
   :depends-on (:alexandria
                :fiveam
                :cl-punch
-               :for)
+               :for
+               :spacelang)
   :pathname "test/"
   :components ((:file "package")
                (:file "test")))
