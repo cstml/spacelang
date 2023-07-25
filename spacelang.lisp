@@ -314,6 +314,42 @@ resulting term."
         (describe-term memory binding)
         (error "Cannot use term \" ~a \" as a binder." (pretty-term binding)))))
 
+(defmethod evaluate ((memory space-memory) (term symbol))
+  (labels
+      ((cons-terms ()
+         (let ((binding (pop! memory))
+               (term (pop! memory)))
+           (if (and (= 1 (length binding))
+                    (eql 'symbol (type-of (car binding))))
+               (set-word! memory (car binding) (cons term (get-word!? memory (car binding)))))))
+
+       (print-last-term ()
+         (format t "~A~%" (pretty-term (pop! memory)))))
+
+    (case term
+      ;; math opps
+      (-  (f2 memory #'-))
+      (+  (f2 memory #'+))
+      (*  (f2 memory #'*))
+      (/  (f2 memory #'/))
+      (>  (f2 memory #'>))
+      (<  (f2 memory #'<))
+      ;; eval
+
+      (eval-term (evaluate memory '!))
+      ;; dictionary
+      (du (push-dictionary! memory))
+      (dd (pop-dictionary! memory))
+      ;; binding
+      (print (print-last-term))
+      ;; cons
+      (cons (cons-terms)))))
+
+
+(defmethod evaluate ((memory space-memory) (term (eql :print)))
+  (let ((last-term (pop! memory)))
+    (format t "~a~%" (pretty-term last-term))))
+
 (defmethod evaluate ((memory space-memory) (term (eql :slurp)))
   (let ((terms (parse-terms (read-line))))
     (mapcar (lambda (term) (evaluate memory term)) terms)))
@@ -349,6 +385,10 @@ resulting term."
   (sb-ext:exit))
 
 (defmethod evaluate ((_memory space-memory) (term (eql :noop)))
+  "Do nothing."
+  nil)
+
+(defmethod evaluate ((_memory space-memory) (term (eql nil)))
   "Do nothing."
   nil)
 

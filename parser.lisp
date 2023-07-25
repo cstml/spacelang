@@ -92,7 +92,7 @@
 
 (defun .print ()
   (.let* ((_ (.char= #\.)))
-    (.identity 'print)))
+    (.identity :print)))
 
 (defun .unknown ()
   (.let* ((nxt (.item)))
@@ -137,7 +137,6 @@
    (.read (.reader-un-delay))
    (.read (.print))
    (.read (.describe))
-   ;;   (.read (.noop))
    (.read (.comment))
    (.read (.unknown))))
 
