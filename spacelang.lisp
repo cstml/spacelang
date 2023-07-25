@@ -536,6 +536,7 @@ resulting term."
                           (list msg)))))))
 
 (defun pop-inbox (memory)
+  "Pops a term from the inbox."
   (bt:with-lock-held (*universe-lock*)
     (let ((next-term (pop (inbox memory))))
       (if next-term
@@ -543,6 +544,7 @@ resulting term."
           :noop))))
 
 (defun space! ()
+  "Starts the spacelang repl."
   (let ((args (uiop:command-line-arguments))
         (home-memory (get-memory :home *universe*)))
     (when args
