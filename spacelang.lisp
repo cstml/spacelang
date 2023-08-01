@@ -201,14 +201,10 @@
   (:documentation "Evaluate a spacelang term."))
 
 (defmethod evaluate :before (memory term)
-  (when *trace-mode* (format t "~~ ~s ~%" term))
-  ;;(bt:acquire-recursive-lock *universe-lock*)
-  )
+  (when *trace-mode* (format t "~~ ~s ~%" term)))
 
 (defmethod evaluate :after (memory term)
-  (when *trace-mode* (format t "~~ ~s ~%" term))
-  ;;(bt:release-recursive-lock *universe-lock*)
-  )
+  (when *trace-mode* (format t "~~ ~s ~%" term)))
 
 (defmethod evaluate ((memory space-memory) (term number))
   "Pushes a term to the stack."
@@ -298,7 +294,7 @@ resulting term."
     (funcall f t1)))
 
 (defmethod evaluate ((memory space-memory) (term (eql :eval-term)))
-  (f1 memory #'1-EVALUATE))
+  (f1 memory (lambda (term) (1-EVALUATE memory term))))
 
 (defun describe-term (memory binding)
   (labels ((sep! () (format t "~a~%" (repeat 80 "="))))
@@ -343,7 +339,12 @@ resulting term."
       ;; binding
       (print (print-last-term))
       ;; cons
-      (cons (cons-terms)))))
+      (cons (cons-terms))
+      ;; t
+      ('nil (push! memory 0))
+      ('t (push! memory t))
+
+      (otherwise (push! memory (get-word! memory term))))))
 
 
 (defmethod evaluate ((memory space-memory) (term (eql :print)))
@@ -388,9 +389,8 @@ resulting term."
   "Do nothing."
   nil)
 
-(defmethod evaluate ((_memory space-memory) (term (eql nil)))
-  "Do nothing."
-  nil)
+(defmethod evaluate ((memory space-memory) (term (eql nil)))
+  (push! memory nil))
 
 (defmethod evaluate ((memory space-memory) (term (eql :load)))
   "Read a file, and evaluate it."
