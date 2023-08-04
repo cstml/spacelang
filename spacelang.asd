@@ -17,7 +17,7 @@
                (:file "spacelang")))
 
 (asdf:defsystem #:spacelang/test
-  :description "Spacelang is a stack programming language."
+  :description "Test suite for spacelang."
   :author "Vlad P. Luchian <cstmlcodes@gmail.com>"
   :license "Specify license here"
   :version "0.0.1"

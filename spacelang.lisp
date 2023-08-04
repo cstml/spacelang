@@ -39,6 +39,8 @@
 
 (defparameter *silent-rebind-mode* t)
 
+(defparameter *silent-mode* t)
+
 (defvar *debug-mode* nil)
 
 (defvar *REPL-MODE* nil)
@@ -55,12 +57,12 @@
   (setf (inbox memory) '()))
 
 (defun push-dictionary! (memory)
-  (format t "Pushing dictionary!~%")
+  (when (not *silent-mode*) (format t "Pushing dictionary!~%"))
   (push (dictionary memory) (dictionary-level memory))
   (setf (dictionary memory) (copy-hash-table (dictionary memory))))
 
 (defun pop-dictionary! (memory)
-  (format t "Popping dictionary!~%")
+  (when (not *silent-mode*) (format t "Popping dictionary!~%"))
   (let ((old-dictionary (pop (dictionary-level memory))))
     (if old-dictionary
         (setf (dictionary memory) old-dictionary)
@@ -71,11 +73,19 @@
 ;; Printing
 (defun pretty-term (term)
   (cond
+    ((stringp term) (format nil "\"~a\"" term))
     ((consp term) (str:concat
                    (format nil "[")
                    (apply #'str:concat  (loop :for x :in term :collect (pretty-term x)))
                    (format nil "]")))
     (t (format nil " ~a "term))))
+
+(defun format-term (term)
+  (cond
+    ((consp term) (format nil "[~s]"
+                          (apply #'str:concat  (loop :for x :in term :collect (pretty-term x)))))
+
+    (t (format nil "~a"term))))
 
 (defun print-stack! (memory)
   "Prints the current stack."
@@ -225,6 +235,15 @@ resulting term."
         (t2 (pop! memory)))
     (evaluate memory (funcall f t1 t2))))
 
+(defun f2p (memory f)
+  "Pops 2 terms from the stack, applies a 2 arrity function, evaluates to t if
+true 0 if false."
+  (let ((t1 (pop! memory))
+        (t2 (pop! memory)))
+    (if (funcall f t1 t2)
+        (evaluate memory t)
+        (evaluate memory 0))))
+
 (defmethod evaluate ((memory space-memory) (term (eql :+)))
   "Pops two terms, sums them, evaluates the result."
   (f2 memory #'+))
@@ -240,23 +259,29 @@ resulting term."
 (defmethod evaluate ((memory space-memory) (term (eql :/)))
   (f2 memory #'/))
 
-(defmethod evaluate ((memory space-memory) (term (eql :/)))
-  (f2 memory  #'/))
-
 (defmethod evaluate ((memory space-memory) (term (eql :<)))
-  (f2 memory #'<))
+  (f2p memory #'<))
 
 (defmethod evaluate ((memory space-memory) (term (eql :>)))
-  (f2 memory #'>))
+  (f2p memory #'>))
 
 (defmethod evaluate ((memory space-memory) (term (eql :<=)))
-  (f2 memory #'<=))
+  (f2p memory #'<=))
 
 (defmethod evaluate ((memory space-memory) (term (eql :>=)))
-  (f2 memory #'>=))
+  (f2p memory #'>=))
 
 (defmethod evaluate ((memory space-memory) (term (eql :=)))
-  (f2 memory #'eql))
+  (f2p memory #'eql))
+
+(defmethod evaluate ((memory space-memory) (term (eql :cons)))
+  (let ((binding (pop! memory))
+        (term (pop! memory)))
+    (if (and (= 1 (length binding))
+             (eql 'symbol (type-of (car binding))))
+        (set-word! memory
+                   (car binding)
+                   (cons term (get-word!? memory (car binding)))))))
 
 (defmethod evaluate ((memory space-memory) (term (eql :bind-term)))
   (let ((binding (pop! memory))
@@ -351,6 +376,10 @@ resulting term."
   (let ((last-term (pop! memory)))
     (format t "~a~%" (pretty-term last-term))))
 
+(defmethod evaluate ((memory space-memory) (term (eql :format)))
+  (let ((last-term (pop! memory)))
+    (format t "~a~%" (format-term last-term))))
+
 (defmethod evaluate ((memory space-memory) (term (eql :slurp)))
   (let ((terms (parse-terms (read-line))))
     (mapcar (lambda (term) (evaluate memory term)) terms)))
@@ -363,11 +392,11 @@ resulting term."
 
 (defmethod evaluate ((memory space-memory) (term (eql :r)))
   (reset-memory memory)
-  (format t "Memory reset.~%"))
+  (when (not *silent-mode*) (format t "Memory reset.~%")))
 
 (defmethod evaluate ((memory space-memory) (term (eql :rs)))
   (reset-stack memory)
-  (format t "Stack reset.~%"))
+  (when (not *silent-mode*) (format t "Stack reset.~%")))
 
 (defmethod evaluate ((memory space-memory) (term (eql :m)))
   (print-memory! memory))
@@ -390,7 +419,8 @@ resulting term."
   nil)
 
 (defmethod evaluate ((memory space-memory) (term (eql nil)))
-  (push! memory nil))
+  "Do nothing."
+  nil)
 
 (defmethod evaluate ((memory space-memory) (term (eql :load)))
   "Read a file, and evaluate it."
@@ -398,6 +428,9 @@ resulting term."
     (run-reader! memory
                  #'read-line
                  (read-file-into-string location))))
+(defmethod evaluate ((memory space-memory) (_term (eql :h)))
+  "Returns the help string."
+  (evaluate memory :help))
 
 (defmethod evaluate ((_memory space-memory) (_term (eql :help)))
   "Returns the help string."

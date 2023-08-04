@@ -10,4 +10,4 @@
   (:export #:space!))
 
 ;; Optimize to type-check
-(declaim (optimize (safety 3)))
+;; (declaim (optimize (safety 3)))
