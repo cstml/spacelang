@@ -81,10 +81,20 @@
     (.identity (read-from-string (str:concat ":" n)))))
 
 (defun .string ()
-  (.let* ((_ (.read (.char= #\")))
-          (ts (.map 'string (.is #'cl:characterp)))
-          (_ (.read (.char= #\"))))
-    (.identity ts)))
+  (.or
+   (.let* ((_ (.read (.char= #\")))
+           (ts (.map 'string (.is (lambda (c)
+                                    (and (cl:characterp c)
+                                         (not(eql c #\")))))))
+           (_ (.read (.char= #\"))))
+     (.identity ts))
+
+   (.let* ((_ (.read (.char= #\')))
+           (ts (.map 'string (.is (lambda (c)
+                                    (and (cl:characterp c)
+                                         (not(eql c #\')))))))
+           (_ (.read (.char= #\'))))
+     (.identity ts))))
 
 (defun .slurp ()
   (.let* ((_ (.string= "slurp")))
@@ -93,6 +103,10 @@
 (defun .print ()
   (.let* ((_ (.char= #\.)))
     (.identity :print)))
+
+(defun .format ()
+  (.let* ((_ (.char= #\,)))
+    (.identity :format)))
 
 (defun .unknown ()
   (.let* ((nxt (.item)))
@@ -136,6 +150,7 @@
    (.read (.reader-delay))
    (.read (.reader-un-delay))
    (.read (.print))
+   (.read (.format))
    (.read (.describe))
    (.read (.comment))
    (.read (.unknown))))

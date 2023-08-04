@@ -1,0 +1,7 @@
+version: "3"
+services:
+  spacelang:
+    image: cstml/spacelang
+    build: ./.
+    volumes: 
+      - "/data"

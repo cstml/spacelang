@@ -14,7 +14,9 @@
           name = "compiler";
           src = self;
           buildInputs = with pkgs;[
+            sbcl
             gnumake
+            lispPackages.quicklisp
           ];
         };
       in
