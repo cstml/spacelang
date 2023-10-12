@@ -1,6 +1,7 @@
 # spacelang
 
-A concatenative, stack based language with async capabilities.
+A (yet another) concatenative, stack based language (but) with async
+capabilities.
 
 ## Status
 

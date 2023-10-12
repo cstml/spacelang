@@ -84,8 +84,7 @@
   (cond
     ((consp term) (format nil "[~s]"
                           (apply #'str:concat  (loop :for x :in term :collect (pretty-term x)))))
-
-    (t (format nil "~a"term))))
+    (t (format nil "~a" term))))
 
 (defun print-stack! (memory)
   "Prints the current stack."
@@ -256,25 +255,32 @@ true 0 if false."
   "Pops two terms, subtracts them, evaluates the result."
   (f2 memory #'-))
 
-(defmethod evaluate ((memory space-memory) (term (eql :/)))
+(defmethod evaluate ((memory space-memory)
+                     (term (eql :/)))
   (f2 memory #'/))
 
-(defmethod evaluate ((memory space-memory) (term (eql :<)))
+(defmethod evaluate ((memory space-memory)
+                     (term (eql :<)))
   (f2p memory #'<))
 
-(defmethod evaluate ((memory space-memory) (term (eql :>)))
+(defmethod evaluate ((memory space-memory)
+                     (term (eql :>)))
   (f2p memory #'>))
 
-(defmethod evaluate ((memory space-memory) (term (eql :<=)))
+(defmethod evaluate ((memory space-memory)
+                     (term (eql :<=)))
   (f2p memory #'<=))
 
-(defmethod evaluate ((memory space-memory) (term (eql :>=)))
+(defmethod evaluate ((memory space-memory)
+                     (term (eql :>=)))
   (f2p memory #'>=))
 
-(defmethod evaluate ((memory space-memory) (term (eql :=)))
+(defmethod evaluate ((memory space-memory)
+                     (term (eql :=)))
   (f2p memory #'eql))
 
-(defmethod evaluate ((memory space-memory) (term (eql :cons)))
+(defmethod evaluate ((memory space-memory)
+                     (term (eql :cons)))
   (let ((binding (pop! memory))
         (term (pop! memory)))
     (if (and (= 1 (length binding))
@@ -283,7 +289,8 @@ true 0 if false."
                    (car binding)
                    (cons term (get-word!? memory (car binding)))))))
 
-(defmethod evaluate ((memory space-memory) (term (eql :bind-term)))
+(defmethod evaluate ((memory space-memory)
+                     (term (eql :bind-term)))
   (let ((binding (pop! memory))
         (term (pop! memory)))
     (if (and (= 1 (length binding))
@@ -291,7 +298,8 @@ true 0 if false."
         (set-word! memory (car binding) term)
         (error "Cannot use term \" ~a \" as a binder." binding))))
 
-(defmethod evaluate ((memory space-memory) (term (eql :send)))
+(defmethod evaluate ((memory space-memory)
+                     (term (eql :send)))
   (let ((binding (pop! memory))
         (term (pop! memory)))
     (labels ((send-1-term (term)
@@ -305,7 +313,8 @@ true 0 if false."
             (t (send-1-term term)))
           (error "Cannot use term \" ~a \" as a machine name." binding)))))
 
-(defmethod evaluate ((memory space-memory) (term (eql :if)))
+(defmethod evaluate ((memory space-memory)
+                     (term (eql :if)))
   (let ((t1 (pop! memory))
         (t2 (pop! memory))
         (t3 (pop! memory)))
@@ -318,7 +327,8 @@ true 0 if false."
   (let ((t1 (pop! memory)))
     (funcall f t1)))
 
-(defmethod evaluate ((memory space-memory) (term (eql :eval-term)))
+(defmethod evaluate ((memory space-memory)
+                     (term (eql :eval-term)))
   (f1 memory (lambda (term) (1-EVALUATE memory term))))
 
 (defun describe-term (memory binding)
@@ -328,14 +338,16 @@ true 0 if false."
     (format t "~a ~~ ~a ~%" (car binding) (pretty-term (get-word! memory (car binding))))
     (sep!)))
 
-(defmethod evaluate ((memory space-memory) (term (eql :describe)))
+(defmethod evaluate ((memory space-memory)
+                     (term (eql :describe)))
   (let ((binding (pop! memory)))
     (if (and (= 1 (length binding))
              (eql 'symbol (type-of (car binding))))
         (describe-term memory binding)
         (error "Cannot use term \" ~a \" as a binder." (pretty-term binding)))))
 
-(defmethod evaluate ((memory space-memory) (term symbol))
+(defmethod evaluate ((memory space-memory)
+                     (term symbol))
   (labels
       ((cons-terms ()
          (let ((binding (pop! memory))
@@ -372,67 +384,85 @@ true 0 if false."
       (otherwise (push! memory (get-word! memory term))))))
 
 
-(defmethod evaluate ((memory space-memory) (term (eql :print)))
+(defmethod evaluate ((memory space-memory)
+                     (term (eql :print)))
   (let ((last-term (pop! memory)))
     (format t "~a~%" (pretty-term last-term))))
 
-(defmethod evaluate ((memory space-memory) (term (eql :format)))
+(defmethod evaluate ((memory space-memory)
+                     (term (eql :format)))
   (let ((last-term (pop! memory)))
     (format t "~a~%" (format-term last-term))))
 
-(defmethod evaluate ((memory space-memory) (term (eql :slurp)))
+(defmethod evaluate ((memory space-memory)
+                     (term (eql :slurp)))
   (let ((terms (parse-terms (read-line))))
     (mapcar (lambda (term) (evaluate memory term)) terms)))
 
-(defmethod evaluate ((memory space-memory) (_term (eql :dictionary-up)))
+(defmethod evaluate ((memory space-memory)
+                     (_term (eql :dictionary-up)))
   (push-dictionary! memory))
 
-(defmethod evaluate ((memory space-memory) (_term (eql :dictionary-down)))
+(defmethod evaluate ((memory space-memory)
+                     (_term (eql :dictionary-down)))
   (pop-dictionary! memory))
 
-(defmethod evaluate ((memory space-memory) (term (eql :r)))
+(defmethod evaluate ((memory space-memory)
+                     (term (eql :r)))
   (reset-memory memory)
   (when (not *silent-mode*) (format t "Memory reset.~%")))
 
-(defmethod evaluate ((memory space-memory) (term (eql :rs)))
+(defmethod evaluate ((memory space-memory)
+                     (term (eql :rs)))
   (reset-stack memory)
   (when (not *silent-mode*) (format t "Stack reset.~%")))
 
-(defmethod evaluate ((memory space-memory) (term (eql :m)))
+(defmethod evaluate ((memory space-memory)
+                     (term (eql :m)))
   (print-memory! memory))
 
-(defmethod evaluate ((memory space-memory) (term (eql :s)))
+(defmethod evaluate ((memory space-memory)
+                     (term (eql :s)))
   (print-stack! memory))
 
-(defmethod evaluate ((memory space-memory) (term (eql :d)))
+(defmethod evaluate ((memory space-memory)
+                     (term (eql :d)))
   (print-dictionary! memory))
 
-(defmethod evaluate ((_memory space-memory) (_term (eql :debug)))
+(defmethod evaluate ((_memory space-memory)
+                     (_term (eql :debug)))
   (if *debug-mode* (setf *debug-mode* nil)
       (setf *debug-mode* t)))
 
-(defmethod evaluate ((_memory space-memory) (term (eql :bye)))
+(defmethod evaluate ((_memory space-memory)
+                     (term (eql :bye)))
   (sb-ext:exit))
 
-(defmethod evaluate ((_memory space-memory) (term (eql :noop)))
+(defmethod evaluate ((_memory space-memory)
+                     (term (eql :noop)))
   "Do nothing."
   nil)
 
-(defmethod evaluate ((memory space-memory) (term (eql nil)))
+(defmethod evaluate ((memory space-memory)
+                     (term (eql nil)))
   "Do nothing."
   nil)
 
-(defmethod evaluate ((memory space-memory) (term (eql :load)))
+(defmethod evaluate ((memory space-memory)
+                     (term (eql :load)))
   "Read a file, and evaluate it."
   (let ((location (pop! memory)))
     (run-reader! memory
                  #'read-line
                  (read-file-into-string location))))
-(defmethod evaluate ((memory space-memory) (_term (eql :h)))
+
+(defmethod evaluate ((memory space-memory)
+                     (_term (eql :h)))
   "Returns the help string."
   (evaluate memory :help))
 
-(defmethod evaluate ((_memory space-memory) (_term (eql :help)))
+(defmethod evaluate ((_memory space-memory)
+                     (_term (eql :help)))
   "Returns the help string."
   (format t "
 :help - for help.
@@ -572,6 +602,32 @@ true 0 if false."
 (defun add-machine (universe name machine)
   (setf (gethash name (space-instances universe)) machine))
 
+(defun remove-machine (universe name)
+  (setf (gethash name (space-instances universe)) nil))
+
+(defun start-machine-thread! (universe machine-name)
+  (let ((top-level *standard-output*)
+        (memory (gethash machine-name (space-instances universe))))
+    (bt:make-thread
+     (lambda ()
+       (handler-case
+           (run-reader-term! memory (lambda () (pop-inbox memory)))
+         (error (err)
+           (handle-err err)
+           (format top-level "In Machine: ~a.~%" machine-name)
+           (format top-level "Error Type: ~s.~%" (type-of err))
+           (format top-level "Error: ~A.~%" err)
+           (reset-stack memory)
+           (format top-level "Stack reset.~%")
+           (reset-inbox memory)
+           (format top-level "Inbox reset.~%")
+           (start-machine-thread! universe machine-name)))))))
+
+(defun initialise-machine (universe new-machine-name)
+  (setf (gethash new-machine-name (space-instances universe))
+        (make-instance 'space-memory :name new-machine-name :parent-universe universe))
+  (start-machine-thread! universe new-machine-name))
+
 (defparameter *universe* (init-universe))
 
 (defun get-memory (memory-name universe)
@@ -581,32 +637,12 @@ true 0 if false."
 (defun send-to-inbox (name-from to-name message universe)
   (let ((msg (make-instance 'message :sender name-from :contents message)))
     (bt:with-lock-held (*universe-lock*)
-     (progn
-       ;; The machine at the address hasn't been initialised/started.
-       (when (not (get-memory to-name universe))
-         (progn
-           (setf (gethash to-name (space-instances universe))
-                 (make-instance 'space-memory :name to-name :parent-universe universe))
-           (let ((top-level *standard-output*)
-                 (memory (gethash to-name (space-instances universe))))
-             (bt:make-thread
-              (lambda ()
-                (handler-case
-                    (run-reader-term! memory (lambda () (pop-inbox memory)))
-                  (error (err)
-                    (handle-err err)
-                    (format top-level "In Machine: ~a.~%" to-name)
-                    (format top-level "Error Type: ~s.~%" (type-of err))
-                    (format top-level "Error: ~A.~%" err)
-                    (reset-stack memory)
-                    (format top-level "Stack reset.~%")
-                    (reset-inbox memory)
-                    (format top-level "Inbox reset.~%")
-                    (run-reader-term! memory (lambda () (pop-inbox memory))))))))))
-
-       (setf (inbox (gethash to-name (space-instances universe)))
-             (concatenate 'list (inbox (gethash to-name (space-instances universe)))
-                          (list msg)))))))
+      ;; The machine at the address hasn't been initialised/started.
+      (when (not (get-memory to-name universe)) (initialise-machine universe to-name))
+      (setf (inbox (gethash to-name (space-instances universe)))
+            (concatenate 'list
+                         (inbox (gethash to-name (space-instances universe)))
+                         (list msg))))))
 
 (defun pop-inbox (memory)
   "Pops a term from the inbox."

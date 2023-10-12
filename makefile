@@ -6,7 +6,13 @@ bin/spci: bin/ $(lisp_files) $(asd_files)
 		    --eval '(ql:quickload "spacelang")' \
 			 --eval '(asdf:load-system "spacelang")' \
 			 --eval '(use-package :spacelang)' \
-			 --eval "(sb-ext:save-lisp-and-die #p\"bin/spci\" :toplevel #'space! :executable t)"
+       --eval "(sb-ext:save-lisp-and-die #p\"bin/spci\" :toplevel #'space! :executable t)"
 
 bin/:
 	mkdir bin
+
+.PHONY: DockerRun
+
+DockerRun:
+	docker build . -t spacelang
+	docker run -it spacelang
