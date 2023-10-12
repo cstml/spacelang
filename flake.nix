@@ -9,6 +9,7 @@
         pkgs = import nixpkgs {
           inherit system;
         };
+        ncurses = pkgs.ncurses;
 
         compiler = pkgs.stdenv.mkDerivation {
           name = "compiler";
@@ -17,13 +18,16 @@
             sbcl
             gnumake
             lispPackages.quicklisp
+            ncurses
           ];
+
+          shellHook = ''
+            export LD_LIBRARY_PATH=$LD_LIBRARY_PATH:${ncurses}/lib;
+          '';
         };
       in
         {
           defaultPackage = compiler;
-
-
         }
     );
 }
