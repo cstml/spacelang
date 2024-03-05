@@ -300,18 +300,18 @@ true 0 if false."
 
 (defmethod evaluate ((memory space-memory)
                      (term (eql :send)))
-  (let ((binding (pop! memory))
+  (let ((machine-name (pop! memory))
         (term (pop! memory)))
     (labels ((send-1-term (term)
-               (send-to-inbox (name memory) (car binding) term (parent-universe memory))))
-      (if (and (= 1 (length binding))
-               (eql 'symbol (type-of (car binding))))
+               (send-to-inbox (name memory) (car machine-name) term (parent-universe memory))))
+      (if (and (= 1 (length machine-name))
+               (eql 'symbol (type-of (car machine-name))))
           (cond
             ;; If the term is a thunk ~ evaluate it.
             ((consp term) (mapcar (lambda (term-1) (send-1-term term-1)) term))
             ;; if the term is a value ~ send it.
             (t (send-1-term term)))
-          (error "Cannot use term \" ~a \" as a machine name." binding)))))
+          (error "Cannot use term \" ~a \" as a machine name." machine-name)))))
 
 (defmethod evaluate ((memory space-memory)
                      (term (eql :if)))
@@ -634,8 +634,9 @@ true 0 if false."
   (gethash memory-name
            (space-instances universe)))
 
-(defun send-to-inbox (name-from to-name message universe)
-  (let ((msg (make-instance 'message :sender name-from :contents message)))
+(defun send-to-inbox (from-name to-name message universe)
+  "Sends message from to machine."
+  (let ((msg (make-instance 'message :sender from-name :contents message)))
     (bt:with-lock-held (*universe-lock*)
       ;; The machine at the address hasn't been initialised/started.
       (when (not (get-memory to-name universe)) (initialise-machine universe to-name))
