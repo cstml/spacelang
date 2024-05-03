@@ -1,4 +1,9 @@
-(in-package :spacelang)
+(defpackage #:spacelang.parser
+  (:use #:cl
+        #:smug
+        #:str)
+  (:export #:parse-terms))
+(in-package :spacelang.parser)
 
 (defun .comment ()
   (.let*
