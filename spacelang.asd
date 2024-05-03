@@ -1,5 +1,4 @@
 ;;;; spacelang.asd
-
 (asdf:defsystem #:spacelang
   :description "Spacelang is a stack programming language."
   :author "Vlad P. Luchian <cstmlcodes@gmail.com>"
@@ -8,13 +7,20 @@
   :serial t
   :depends-on (:alexandria
                :str
-               :fiveam
                :cl-punch
-               :smug
-               :bt-semaphore)
-  :components ((:file "package")
-               (:file "parser")
-               (:file "spacelang")))
+               :bt-semaphore
+               :lparallel
+               :smug)
+  :components ((:module "src"
+                :serial t
+                :components
+                ((:file "package")
+                 (:file "parser")
+                 (:file "term")
+                 (:file "memory")
+                 (:file "universe")
+                 (:file "evaluator")
+                 (:file "spacelang")))))
 
 (asdf:defsystem #:spacelang/test
   :description "Test suite for spacelang."
@@ -22,11 +28,10 @@
   :license "Specify license here"
   :version "0.0.1"
   :serial t
-  :depends-on (:alexandria
-               :fiveam
-               :cl-punch
-               :for
+  :depends-on (:fiveam
                :spacelang)
-  :pathname "test/"
-  :components ((:file "package")
-               (:file "test")))
+  ; :pathname "test/"
+  :components ((:module "test"
+                :components ((:file "package")
+                             (:file "test"))))
+  :perform (test-op (op c) (symbol-call :fiveam :run-tests c)))
