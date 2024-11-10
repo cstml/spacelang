@@ -9,12 +9,12 @@
 
 (defun pretty-term (term)
   (cond
-    ((stringp term) (format nil "\"~a\"" term))
+    ((stringp term) (format nil "\"~s\"" term))
     ((consp term) (str:concat
                    (format nil "[")
                    (apply #'str:concat  (loop :for x :in term :collect (pretty-term x)))
                    (format nil "]")))
-    (t (format nil " ~a "term))))
+    (t (format nil " ~s "term))))
 
 (defun format-term (term)
   (cond

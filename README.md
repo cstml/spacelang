@@ -6,3 +6,11 @@ capabilities.
 ## Status
 
 Brittle, slightly broken, MVP.
+
+
+## Syntax
+```
+$  - send
+$! - send eval
+@  - bind
+```

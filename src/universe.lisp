@@ -25,22 +25,25 @@
           (make-instance 'space-memory :name :home :parent-universe universe))
     universe))
 
+(defparameter *universe* (init-universe))
+
 (defun add-machine (universe name machine)
   (setf (gethash name (space-instances universe)) machine))
 
 (defun remove-machine (universe name)
   (setf (gethash name (space-instances universe)) nil))
 
-
 (defun initialise-machine (universe new-machine-name)
   (setf (gethash new-machine-name (space-instances universe))
         (make-instance 'space-memory :name new-machine-name
-                                     :parent-universe universe))
-  (start-machine-thread! universe new-machine-name))
+                                     :parent-universe universe)))
 
 (defun get-memory (memory-name universe)
-  (gethash memory-name
-           (space-instances universe)))
+  (if-let ((memory (gethash memory-name
+                            (space-instances universe))))
+    memory
+    (progn (initialise-machine  universe memory-name)
+           (get-memory memory-name universe))))
 
 (defun print-universe! ()
   "Prints the current universe."
@@ -48,11 +51,9 @@
            (newline! () (format t "~%")))
     (newline!)
     (print-sep!)
-    (loop :for memory :in (hash-table-values (space-instances *universe*))
+    (loop :for memory :in (alexandria:hash-table-values (space-instances *universe*))
           :do (progn
                 (print-name! memory)
                 (print-stack! memory)
                 (print-dictionary! memory)
                 (print-sep!)))))
-
-(defparameter *universe* (init-universe))
