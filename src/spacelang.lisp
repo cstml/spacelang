@@ -5,7 +5,9 @@
         #:spacelang.term
         #:spacelang.evaluator
         #:spacelang.universe)
+  (:local-nicknames (:a :alexandria))
   (:shadowing-import-from :alexandria "EMPTYP")
+  (:import-from :alexandria #:read-file-into-string)
   (:export #:space!
            ;; Globals
            #:*universe*
@@ -34,9 +36,11 @@
              (t
               (collect-terms slurp-fn remaining (cons term acc)))))))
     (if (emptyp remaining)
-        (multiple-value-bind (term remaining) (spacelang.parser::parse (spacelang.parser::.term) (funcall slurp-fn))
+        (multiple-value-bind (term remaining)
+            (spacelang.parser::parse (spacelang.parser::.term) (funcall slurp-fn))
           (proceed term remaining acc))
-        (multiple-value-bind (term remaining) (spacelang.parser::parse (spacelang.parser::.term) remaining)
+        (multiple-value-bind (term remaining)
+            (spacelang.parser::parse (spacelang.parser::.term) remaining)
           (proceed term remaining acc)))))
 
 (defun prompt (memory)
@@ -47,8 +51,8 @@
 (defun run-reader! (memory slurp-fn remaining)
   (labels
       ((eval-fn (slurp-fn remaining)
-         (multiple-value-bind
-               (term remaining) (spacelang.parser::parse (spacelang.parser::.term) remaining)
+         (multiple-value-bind (term remaining)
+             (spacelang.parser::parse (spacelang.parser::.term) remaining)
            (progn
              (cond
                ((eql :reader-delay term)
@@ -111,6 +115,13 @@
 
     (continue-eval pop-fn)))
 
+(defmethod evaluate ((memory space-memory)
+                     (term (eql :load)))
+  "Read a file, and evaluate it."
+  (let ((location (pop! memory)))
+    (run-reader! memory
+                 #'read-line
+                 (read-file-into-string location))))
 (defun space! ()
   "Starts the spacelang repl."
   (let ((args (uiop:command-line-arguments))

@@ -91,15 +91,15 @@
   (loop :for x :in (hash-table-alist (dictionary memory))
         :do (let ((binder (car x))
                   (term (cdr x)))
-              (format t "~A ~~ ~A ~%" binder (pretty-term term)))))
+              (format t "~a ~~ ~a ~%" binder (pretty-term term)))))
 
 (defun print-name! (memory)
   "Prints the current memory name."
-  (format t "memory: ~a. ~%" (name memory)))
+  (format t "memory: ~s. ~%" (name memory)))
 
 (defun print-memory! (memory)
   "Prints the current memory."
-  (labels ((print-sep! () (format t "~A~%" (repeat 80 "-")))
+  (labels ((print-sep! () (format t "~s~%" (repeat 80 "-")))
            (newline! () (format t "~%")))
     (newline!)
     (print-sep!)
@@ -141,3 +141,13 @@
             (format t "Rebinding word \"~s\".~%" s-word))
           (setf (gethash s-word (dictionary memory)) term))
         (setf (gethash s-word (dictionary memory)) term))))
+
+(defmethod evaluate ((memory space-memory)
+                     (term (eql :r)))
+  (reset-memory memory)
+  (when (not *silent-mode*) (format t "Memory reset.~%")))
+
+(defmethod evaluate ((memory space-memory)
+                     (term (eql :rs)))
+  (reset-stack memory)
+  (when (not *silent-mode*) (format t "Stack reset.~%")))

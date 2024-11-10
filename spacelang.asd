@@ -7,6 +7,7 @@
   :serial t
   :depends-on (:alexandria
                :str
+               :arrows
                :cl-punch
                :bt-semaphore
                :lparallel
@@ -20,7 +21,8 @@
                  (:file "memory")
                  (:file "universe")
                  (:file "evaluator")
-                 (:file "spacelang")))))
+                 (:file "spacelang")
+                 (:file "compiler")))))
 
 (asdf:defsystem #:spacelang/test
   :description "Test suite for spacelang."

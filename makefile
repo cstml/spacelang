@@ -16,3 +16,20 @@ bin/:
 DockerRun:
 	docker build . -t spacelang
 	docker run -it spacelang
+
+compiler:
+	sbcl \
+    --disable-debugger \
+	  --eval '(ql:quickload "spacelang")' \
+	  --eval '(asdf:load-system "spacelang")' \
+	  --eval '(use-package :spacelang.compiler)' \
+    --eval '(compiler)'
+
+bake:
+	sbcl --disable-debugger \
+	     --eval '(ql:quickload "spacelang")' \
+	     --eval '(asdf:load-system "spacelang")' \
+	     --eval '(use-package :spacelang.compiler)' \
+       --eval '(bake-binary\
+									 #p "/home/cstml/.quicklisp/local-projects/spacelang/bin/baked"\
+									 #p"/home/cstml/.quicklisp/local-projects/spacelang/example/add_2.sp")'

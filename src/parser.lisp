@@ -50,7 +50,7 @@
     (.identity (read-from-string (str:concat ":" o)))))
 
 (defun .bind-term ()
-  (.let* ((_ (.map 'string (.char= #\^))))
+  (.let* ((_ (.map 'string (.char= #\@))))
     (.identity :bind-term)))
 
 (defun .eval-term ()
