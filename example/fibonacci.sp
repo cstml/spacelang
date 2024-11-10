@@ -3,22 +3,22 @@
 "Hello, this prints the first n fibonacci numbers
 How many numbers would you like to print?" ,
 
-slurp [i] ^
+slurp [i] @
 
-[ 1 i - [i] ^ ] [ decreaseI ] ^
+[ 1 i - [i] @ ] [ decreaseI ] @
 
-1 [firstNumber] ^
-1 [secondNumber] ^
+1 [firstNumber] @
+1 [secondNumber] @
 
-[firstNumber secondNumber +] [nextFibo] ^
+[firstNumber secondNumber +] [nextFibo] @
 
-[firstNumber print] [printFirstFibo] ^
+[firstNumber print] [printFirstFibo] @
 
-[ nextFibo! secondNumber [firstNumber] ^ [secondNumber] ^] [swapWithNextFibos] ^
+[ nextFibo ! secondNumber [firstNumber] @ [secondNumber] @] [swapWithNextFibos] @
 
 [[ printFirstFibo ! :bye ]
  [ printFirstFibo ! swapWithNextFibos ! decreaseI ! areWeThereYet ! ]
  i if ! ]
-[areWeThereYet] ^
+[areWeThereYet] @
 
 areWeThereYet !

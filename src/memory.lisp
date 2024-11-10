@@ -134,7 +134,7 @@
   (gethash s-word (dictionary memory)))
 
 (defun set-word! (memory s-word term)
-  (let ((exists (cdr (gethash s-word (dictionary memory)))))
+  (let ((exists (gethash s-word (dictionary memory))))
     (if exists
         (progn
           (when (not *silent-rebind-mode*)
