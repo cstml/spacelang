@@ -133,6 +133,11 @@
   (.let* ((_ (.char= #\~)))
     (.identity :describe)))
 
+(defun .send-bang ()
+  (.let* ((_ (.char= #\$))
+          (_ (.char= #\!)))
+    (.identity :send-bang)))
+
 (defun .send ()
   (.let* ((_ (.char= #\$)))
     (.identity :send)))
@@ -148,6 +153,7 @@
    (.read (.dict-down))
    (.read (.cons))
    (.read (.opp))
+   (.read (.send-bang))
    (.read (.send))
    (.read (.bind-term))
    (.read (.eval-term))

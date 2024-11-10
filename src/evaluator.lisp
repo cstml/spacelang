@@ -3,7 +3,8 @@
         #:spacelang.memory
         #:spacelang.universe
         #:spacelang.parser
-        #:spacelang.term)
+        #:spacelang.term
+        #:lparallel)
   (:import-from #:spacelang.memory)
   (:import-from #:str #:repeat #:emptyp)
   (:export #:*silent-rebind-mode*
@@ -126,16 +127,25 @@ true 0 if false."
         (error "Cannot use term \" ~a \" as a binder." binding))))
 
 (defun get-name (term)
-  (and
-   (= 1 (length term))
-   (car term)))
+  (if (and (= 1 (length term)) (car term))
+      (car term)
+      (error "Cannot use term \" ~a \" as a machine name." term)))
 
 (defmethod evaluate ((memory space-memory)
                      (term (eql :send)))
   (let* ((machine-name (get-name (pop! memory)))
          (term (pop! memory))
          (other-memory (get-memory machine-name *universe*)))
-    (evaluate other-memory term)))
+    (future (evaluate other-memory term))))
+
+(defmethod evaluate ((memory space-memory)
+                     (term (eql :send-bang)))
+  (let* ((machine-name (get-name (pop! memory)))
+         (term (pop! memory))
+         (other-memory (get-memory machine-name *universe*)))
+    (future
+      (evaluate other-memory term)
+      (evaluate other-memory :eval-term))))
 
 (defmethod evaluate ((memory space-memory)
                      (term (eql :if)))

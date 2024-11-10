@@ -126,6 +126,7 @@
   "Starts the spacelang repl."
   (let ((args (uiop:command-line-arguments))
         (home-memory (get-memory :home *universe*)))
+    (setf lparallel:*kernel* (lparallel:make-kernel 10))
     (when args
       (progn (evaluate home-memory (first args))
              (evaluate home-memory :load)))
