@@ -127,6 +127,7 @@
   (let ((args (uiop:command-line-arguments))
         (home-memory (get-memory :home *universe*)))
     (setf lparallel:*kernel* (lparallel:make-kernel 10))
+    (setf *repl-mode* t)
     (when args
       (progn (evaluate home-memory (first args))
              (evaluate home-memory :load)))

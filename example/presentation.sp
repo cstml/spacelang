@@ -59,12 +59,12 @@
 
 
 
-  " ,] [newPage] ^
-[(slurp :rs newPage ! )] [waitForCharacter] ^
+  " ,] [newPage] @
+[(slurp  newPage ! )] [waitForCharacter] @
 
-[:s] [results] ^
+[:s] [results] @
 
-[ print waitForCharacter ! ] [printThenWait] ^
+[ print waitForCharacter ! ] [printThenWait] @
 "Hello and welcome to TechDive presentation of spacelang" ,
 waitForCharacter !
 
@@ -126,7 +126,7 @@ waitForCharacter !
 that is). The language provides some built in words:
   - numerical operations: + - / * < <= etc.
   - machine operations: :h :r :debug :m : rs etc.
-  - memory operations: ^
+  - memory operations: @
   - evaluator operations: !
   - inter-machine operations: $",
 waitForCharacter !
@@ -148,7 +148,7 @@ describe with the term
 ",
 waitForCharacter !
 
-"We can bind terms to words with the word `^`, together with thunks we can now
+"We can bind terms to words with the word `@`, together with thunks we can now
 define our own funky words.
 
   > [1 +] [addOne] " ,
@@ -162,7 +162,7 @@ The program will crash and burn as addOne is not defined/bound outside the scope
 defined by the parens.
 
 As the parens themselves are terms - we can use scope local to our thunks as so
-  >  [ ([x] ^) ]
+  >  [ ([x] @) ]
   A term which would pop x and discard it essentially.
   " , waitForCharacter !
 
