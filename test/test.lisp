@@ -87,10 +87,12 @@ universe-fixture."
 
 (test evaluate-send
   (universe-fixture
-   (is (all-stacks-end-as
-        (evaluate-sequence *home-machine '(1 (a) :send))
-        '((:home . '())
-          (:a . 1 ))))))
+   (progn
+     (evaluate-sequence *home-machine '(1 (a) :send))
+     (is
+      (equal '((:home . '())
+               (:a . 1 ))))
+     (spacelang::reset-universe))))
 
 (test evaluate-binding
   (universe-fixture

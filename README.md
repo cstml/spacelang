@@ -3,12 +3,13 @@
 A (yet another) concatenative, stack based language (but) with async
 capabilities.
 
-## Status
+
+# Status
 
 Brittle, slightly broken, MVP.
 
 
-## Syntax
+# Syntax
 ```
 $  - send
 $! - send eval

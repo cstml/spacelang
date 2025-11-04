@@ -10,7 +10,9 @@
    #:space-instances
    #:get-memory
    #:*universe*
-   #:print-universe!))
+   #:print-universe!
+   #:init-universe
+   #:reset-universe))
 (in-package #:spacelang.universe)
 
 (defclass universe ()
@@ -20,12 +22,16 @@
       :accessor space-instances)))
 
 (defun init-universe ()
+  "Initialise a universe."
   (let ((universe (make-instance 'universe)))
     (setf (gethash :home (space-instances universe))
           (make-instance 'space-memory :name :home :parent-universe universe))
     universe))
 
 (defparameter *universe* (init-universe))
+
+(defun reset-universe ()
+  (setf *universe* (init-universe)))
 
 (defun add-machine (universe name machine)
   (setf (gethash name (space-instances universe)) machine))

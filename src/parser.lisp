@@ -8,7 +8,7 @@
 (defun .comment ()
   (.let*
       ((_ (.string-equal "{"))
-       (c (.map 'string (.is #'cl:characterp)))
+       (_ (.map 'string (.is #'cl:characterp)))
        (_ (.string-equal "}")))
     (.identity :noop)))
 

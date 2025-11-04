@@ -50,6 +50,12 @@ true 0 if false."
         (1 '(1))
         (t (cons term (collect-then (funcall more-terms) more-terms)))))
 
+(defun binding? (term)
+  (if (and (= 1 (length term))
+           (eql 'symbol (type-of (car term))))
+      (car term)
+      nil))
+
 (defgeneric 1-evaluate (memory term)
   (:documentation "Evaluate a spacelang term."))
 
@@ -68,43 +74,56 @@ true 0 if false."
 (defmethod evaluate :after (memory term)
   (when *trace-mode* (format t "~~ ~s ~%" term)))
 
-(defmethod evaluate ((memory space-memory) (term number))
+(defmethod evaluate ((memory space-memory)
+                     (term number))
   (push! memory term))
 
-(defmethod evaluate ((memory space-memory) (term cons))
+(defmethod evaluate ((memory space-memory)
+                     (term cons))
   (push! memory term))
 
-(defmethod evaluate ((memory space-memory) (term string))
+(defmethod evaluate ((memory space-memory)
+                     (term string))
   (push! memory term))
 
-(defmethod evaluate ((memory space-memory) (term (eql :+)))
+(defmethod evaluate ((memory space-memory)
+                     (term (eql :+)))
   (f2 memory #'+))
 
-(defmethod evaluate ((memory space-memory) (term (eql :*)))
+(defmethod evaluate ((memory space-memory)
+                     (term (eql :*)))
   (f2 memory #'*))
 
-(defmethod evaluate ((memory space-memory) (term (eql :-)))
+(defmethod evaluate ((memory space-memory)
+                     (term (eql :-)))
   (f2 memory #'-))
 
-(defmethod evaluate ((memory space-memory) (term (eql :/)))
+(defmethod evaluate ((memory space-memory)
+                     (term (eql :/)))
   (f2 memory #'/))
 
-(defmethod evaluate ((memory space-memory) (term (eql :<)))
+(defmethod evaluate ((memory space-memory)
+                     (term (eql :<)))
   (f2p memory #'<))
 
-(defmethod evaluate ((memory space-memory) (term (eql :>)))
+(defmethod evaluate ((memory space-memory)
+                     (term (eql :>)))
   (f2p memory #'>))
 
-(defmethod evaluate ((memory space-memory) (term (eql :<=)))
+(defmethod evaluate ((memory space-memory)
+                     (term (eql :<=)))
   (f2p memory #'<=))
 
-(defmethod evaluate ((memory space-memory) (term (eql :>=)))
+(defmethod evaluate ((memory space-memory)
+                     (term (eql :>=)))
   (f2p memory #'>=))
 
-(defmethod evaluate ((memory space-memory) (term (eql :=)))
+(defmethod evaluate ((memory space-memory)
+                     (term (eql :=)))
   (f2p memory #'eql))
 
-(defmethod evaluate ((memory space-memory) (term (eql :cons)))
+(defmethod evaluate ((memory space-memory)
+                     (term (eql :cons)))
   (let ((binding (pop! memory))
         (term (pop! memory)))
     (if (and (= 1 (length binding))
@@ -112,12 +131,6 @@ true 0 if false."
         (set-word! memory
                    (car binding)
                    (cons term (get-word!? memory (car binding)))))))
-
-(defun binding? (term)
-  (if (and (= 1 (length term))
-           (eql 'symbol (type-of (car term))))
-      (car term)
-      nil))
 
 (defmethod evaluate ((memory space-memory) (term (eql :bind-term)))
   (let ((binding (binding? (pop! memory)))
@@ -193,29 +206,25 @@ true 0 if false."
        (print-last-term ()
          (format t "~A~%" (pretty-term (pop! memory)))))
 
-    (case term
-      ;; math opps
-      (-  (f2 memory #'-))
-      (+  (f2 memory #'+))
-      (*  (f2 memory #'*))
-      (/  (f2 memory #'/))
-      (>  (f2 memory #'>))
-      (<  (f2 memory #'<))
-      ;; eval
+    (cond
+      ((eql term '-) (f2 memory #'-))
+      ((eql term '+) (f2 memory #'+))
+      ((eql term '*) (f2 memory #'*))
+      ((eql term '/) (f2 memory #'/))
+      ((eql term '>) (f2 memory #'>))
+      ((eql term '<) (f2 memory #'<))
 
-      (eval-term (evaluate memory '!))
-      ;; dictionary
-      (du (push-dictionary! memory))
-      (dd (pop-dictionary! memory))
-      ;; binding
-      (print (print-last-term))
-      ;; cons
-      (cons (cons-terms))
-      ;; t
-      ('nil (push! memory 0))
-      ('t (push! memory t))
+      ((eql term 'eval-term) (evaluate memory '!))
+      ((eql term 'du) (push-dictionary! memory))
+      ((eql term 'dd) (pop-dictionary! memory))
+      ((eql term 'print) (print-last-term))
 
-      (otherwise (push! memory (get-word! memory term))))))
+      ((eql term 'cons) (cons-terms))
+
+      ((eql term nil) (push! memory 0))
+      ((eql term t) (push! memory t))
+
+      (t (push! memory (get-word! memory term))))))
 
 
 (defmethod evaluate ((memory space-memory)
