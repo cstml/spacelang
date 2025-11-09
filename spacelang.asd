@@ -6,18 +6,20 @@
   :version "0.0.1"
   :serial t
   :depends-on (:alexandria
+               ;; :serapeum
                :str
                :arrows
                :cl-punch
                :bt-semaphore
                :lparallel
+               :bordeaux-threads
                :smug)
   :components ((:module "src"
                 :serial t
                 :components
                 ((:file "package")
-                 (:file "parser")
                  (:file "term")
+                 (:file "parser")
                  (:file "memory")
                  (:file "universe")
                  (:file "evaluator")
@@ -35,5 +37,6 @@
   ; :pathname "test/"
   :components ((:module "test"
                 :components ((:file "package")
-                             (:file "test"))))
+                             (:file "test")
+                             (:fole "parser"))))
   :perform (test-op (op c) (symbol-call :fiveam :run-tests c)))

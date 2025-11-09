@@ -1,7 +1,3 @@
-(defpackage #:spacelang/test
-  (:use #:cl
-        #:alexandria
-        #:fiveam))
 (in-package #:spacelang/test)
 
 (require :fiveam)

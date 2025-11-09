@@ -1,16 +1,28 @@
 (defpackage #:spacelang.parser
   (:use #:cl
         #:smug
-        #:str)
+        #:str
+        #:spacelang.term)
+  (:import-from #:serapeum #:make)
   (:export #:parse-terms))
 (in-package :spacelang.parser)
+
+(defun split-by-one-space (string)
+  "Returns a list of substrings of string
+divided by ONE space each.
+Note: Two consecutive spaces will be seen as
+if there were an empty string between them."
+  (loop for i = 0 then (1+ j)
+        as j = (position #\Space string :start i)
+        collect (subseq string i j)
+        while j))
 
 (defun .comment ()
   (.let*
       ((_ (.string-equal "{"))
        (_ (.map 'string (.is #'cl:characterp)))
        (_ (.string-equal "}")))
-    (.identity :noop)))
+    (.identity (make 's-noop))))
 
 (defun .whitespace ()
   (.or (.map 'string
@@ -27,8 +39,23 @@
           (.optional (.whitespace))))
 
 (defun .number ()
-  (.let* ((n (.map 'string (.is #'cl:digit-char-p))))
-    (.identity (read-from-string n))))
+  (.let* ((sign (.optional (.char= #\-)))
+          (n (.map 'string (.is #'cl:digit-char-p))))
+    (.identity
+     (make 's-number :s-number (read-from-string (concat (string sign) n))))))
+
+(defun .symbol ()
+  (.let* ((s (.map 'string
+                   (.or (.char= #\+)
+                        (.char= #\-)
+                        (.char= #\<)
+                        (.char= #\>)
+                        (.char= #\=)
+                        (.char= #\*)
+                        (.char= #\/)
+                        (.is #'cl:upper-case-p)
+                        (.is #'cl:lower-case-p)))))
+    (.identity (make 's-symbol :s-symbol s))))
 
 (defun .word ()
   (labels ((.chars () (.or (.is #'cl:upper-case-p)
@@ -144,27 +171,29 @@
 
 (defun .term ()
   (.or
-   (.read (.if))
-   (.read (.keyword))
-   (.read (.number))
-   (.read (.slurp))
-   (.read (.word))
-   (.read (.dict-up))
-   (.read (.dict-down))
-   (.read (.cons))
-   (.read (.opp))
-   (.read (.send-bang))
-   (.read (.send))
-   (.read (.bind-term))
-   (.read (.eval-term))
-   (.read (.string))
-   (.read (.reader-delay))
-   (.read (.reader-un-delay))
-   (.read (.print))
-   (.read (.format))
-   (.read (.describe))
-   (.read (.comment))
-   (.read (.unknown))))
+   (.symbol)
+   ;; (.read (.if))
+   ;; (.read (.keyword))
+   ;; (.read (.number))
+   ;; (.read (.slurp))
+   ;; (.read (.word))
+   ;; (.read (.dict-up))
+   ;; (.read (.dict-down))
+   ;; (.read (.cons))
+   ;; (.read (.opp))
+   ;; (.read (.send-bang))
+   ;; (.read (.send))
+   ;; (.read (.bind-term))
+   ;; (.read (.eval-term))
+   ;; (.read (.string))
+   ;; (.read (.reader-delay))
+   ;; (.read (.reader-un-delay))
+   ;; (.read (.print))
+   ;; (.read (.format))
+   ;; (.read (.describe))
+   ;; (.read (.comment))
+   ;; (.read (.unknown))
+   ))
 
 (defun .terms ()
   (.map 'list (.term)))

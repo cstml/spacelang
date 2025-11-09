@@ -123,24 +123,24 @@
       (error "Stack underflow!")))
 
 ;; Dictionary
-(defun get-word! (memory s-word)
-  (multiple-value-bind (result exists) (gethash s-word (dictionary memory))
+(defun get-word! (memory w)
+  (multiple-value-bind (result exists) (gethash w (dictionary memory))
     (if exists
         result
-        (error "Unbound Word: \"~s\" " s-word))))
+        (error "Unbound Word: \"~s\" " w))))
 
 ;; Dictionary
-(defun get-word!? (memory s-word)
-  (gethash s-word (dictionary memory)))
+(defun get-word!? (memory w)
+  (gethash w (dictionary memory)))
 
-(defun set-word! (memory s-word term)
-  (let ((exists (gethash s-word (dictionary memory))))
+(defun set-word! (memory w term)
+  (let ((exists (gethash w (dictionary memory))))
     (if exists
         (progn
           (when (not *silent-rebind-mode*)
-            (format t "Rebinding word \"~s\".~%" s-word))
-          (setf (gethash s-word (dictionary memory)) term))
-        (setf (gethash s-word (dictionary memory)) term))))
+            (format t "Rebinding word \"~s\".~%" w))
+          (setf (gethash w (dictionary memory)) term))
+        (setf (gethash w (dictionary memory)) term))))
 
 (defmethod evaluate ((memory space-memory)
                      (term (eql :r)))
