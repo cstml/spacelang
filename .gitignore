@@ -6,3 +6,5 @@
 /.direnv/
 /spacelang
 /bin/
+*.out
+/src/spc
