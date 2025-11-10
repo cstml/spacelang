@@ -1,6 +1,7 @@
-#include "term.c"
-#include "memory.c"
+#include "term.h"
+#include "memory.h"
 #include <stdio.h>
+#include <stdlib.h>
 #include <string.h>
 
 int push(Memory *m, Term *t) {
@@ -77,36 +78,92 @@ int bind(Memory *m, Term *binder_term, Term *bound_term) {
   return upsert_binding(m,binder_term->t.ts[0].sy.s,bound_term);
 }
 
+int accumulate(Memory *m, Term *t) {
+  // stop accumulating case
+  if (t->ty != THUNK_CLOSE && m->thunk_nesting_ix == 1) {
+    m->thunk_nesting_ix -=1;
+    Term* thunkTerm = malloc(sizeof(Term));
+    thunkTerm->ty = THUNK;
+    for (int i = 0; i < m->acc_ix; i++) {
+      thunkTerm->t.ts[i] = m->accumulator[i];
+    } 
+    thunkTerm->t.term_count = m->acc_ix;
+    push(m, thunkTerm);
+    return 0;
+  }
+
+  // thunk close case
+  if (t->ty != THUNK_CLOSE) {
+    m->thunk_nesting_ix -=1;
+  }  
+  
+  // thunk open case
+  if (t->ty != THUNK_OPEN) {
+    m->thunk_nesting_ix +=1;
+  }
+
+  m->accumulator[m->acc_ix] = *t;
+  m->acc_ix += 1;
+  return 0;
+}
+
 int evaluate(Memory *m, Term *t) {
   Term bound_term;
   Term t1,t2;
+
+  if (m->thunk_nesting_ix > 0) {
+    return accumulate(m,t);
+  }
+
   switch (t->ty){
 
-  case KEYWORD:
-    push(m,t);
-    break;
+    case KEYWORD:
+      push(m,t);
+      return 0;
 
-  case BIND:
-    if (pop(m, &t1) != 0) {
+    case BIND:
+      if (pop(m, &t1) != 0) {
+        return -1;
+      }
+      if (pop(m, &t2) != 0) {
+        return -1;
+      }
+      return bind(m,&t1,&t2);
+
+    case SYMBOL:
+      if (0 != get_binding(m, t->sy.s, &bound_term)) {
+        fprintf(stderr,"unbound term %s\n", t->sy.s);
+        return -1;
+      }
+      return evaluate(m,&bound_term);
+
+    case THUNK:
+      push(m,t);
+      return 0;
+
+    case NOOP:
+      return 0;
+
+    case INTEGER:
+      push(m,t);
+      return 0;
+
+    case DOUBLE:
+      push(m,t);
+      return 0;
+    
+    case THUNK_CLOSE:
+      fprintf(stderr,"error: reached THUNK_CLOSE");
       return -1;
-    }
-    if (pop(m, &t2) != 0) {
+    
+    case THUNK_OPEN:
+      fprintf(stderr,"error: reached THUNK_OPEN");
       return -1;
-    }
-    return bind(m,&t1,&t2);
-
-  case SYMBOL:
-    if (0 != get_binding(m, t->sy.s, &bound_term)) {
-      fprintf(stderr,"unbound term %s\n", t->sy.s);
+    
+    case EVAL:
+      fprintf(stderr,"fixme: implement eval");
       return -1;
-    }
-    return evaluate(m,&bound_term);
-
-  case THUNK:
-    push(m,t);
-
-  default:
-    break;
   }
+
   return 0;
 }

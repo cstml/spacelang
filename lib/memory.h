@@ -1,8 +1,8 @@
-#ifndef TERM_C
-#define TERM_C
+#ifndef MEMORY_H_SEEN
+#define MEMORY_H_SEEN
 
-#include "term.c"
 #include <stdlib.h>
+#include "term.h"
 
 typedef struct Binding_T {
   char *name;
@@ -28,4 +28,5 @@ Memory* MkMemory(){
   m->thunk_nesting_ix = 0;
   return m;
 }
-#endif
+
+#endif // MEMORY_H_SEEN

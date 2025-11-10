@@ -1,9 +1,10 @@
 #include <CUnit/Basic.h>
 #include <CUnit/CUnit.h>
-#include "parser_test.c"
 #include "evaluator.c"
 #include "term.c"
 #include "memory.c"
+#include "parser.c"
+#include "parser_test.c"
 
 void test_push() {
   Memory* m = MkMemory();
