@@ -8,3 +8,6 @@
 /bin/
 *.out
 /src/spc
+*.o
+*.o
+*/**.o

@@ -6,10 +6,15 @@
 #include <sys/stat.h>
 #include "parser.h"
 #include "term.h"
+#include "memory.h"
+#include "evaluator.h"
 
 #define BUF_SIZE 2048
 
+
 int main() {
+  Memory *m = MkMemory();
+
   // Check if stdin is a pipe/redirect or a terminal
   int is_interactive = isatty(STDIN_FILENO);
   
@@ -70,8 +75,10 @@ int main() {
       for (unsigned long long i = total_count - line_count; i < total_count; i++) {
         printf("  ");
         term_println(&all_terms[i]);
+        evaluate(m, &all_terms[i]);
       }
       printf("\n");
+      memory_print(m);
     }
   }
   
@@ -85,11 +92,14 @@ int main() {
       printf("─── Term #%llu ───\n", i + 1);
       term_println(&all_terms[i]);
       printf("\n");
+      evaluate(m, &all_terms[i]);
     }
     
     printf("─────────────────────────────────────────\n");
     printf("Total terms processed: %llu\n", total_count);
+    memory_print(m);
   }
+
   
   // Cleanup
   free(all_terms);

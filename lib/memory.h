@@ -1,7 +1,6 @@
 #ifndef MEMORY_H_SEEN
 #define MEMORY_H_SEEN
 
-#include <stdlib.h>
 #include "term.h"
 
 typedef struct Binding_T {
@@ -21,12 +20,13 @@ typedef struct Memory_T {
   unsigned int binding_count;
 } Memory;
 
-Memory* MkMemory(){
-  Memory *m = malloc(sizeof(Memory));
-  m->stack_ix = 0;
-  m->binding_count = 0;
-  m->thunk_nesting_ix = 0;
-  return m;
-}
+Memory* MkMemory();
+
+// Pretty print functions
+void memory_print(const Memory *m);
+void memory_print_stack(const Memory *m);
+void memory_print_accumulator(const Memory *m);
+void memory_print_bindings(const Memory *m);
+void memory_free(Memory *m);
 
 #endif // MEMORY_H_SEEN

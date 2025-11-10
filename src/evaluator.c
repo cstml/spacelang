@@ -80,7 +80,7 @@ int bind(Memory *m, Term *binder_term, Term *bound_term) {
 
 int accumulate(Memory *m, Term *t) {
   // stop accumulating case
-  if (t->ty != THUNK_CLOSE && m->thunk_nesting_ix == 1) {
+  if (t->ty == THUNK_CLOSE && m->thunk_nesting_ix == 1) {
     m->thunk_nesting_ix -=1;
     Term* thunkTerm = malloc(sizeof(Term));
     thunkTerm->ty = THUNK;
@@ -93,12 +93,12 @@ int accumulate(Memory *m, Term *t) {
   }
 
   // thunk close case
-  if (t->ty != THUNK_CLOSE) {
+  if (t->ty == THUNK_CLOSE) {
     m->thunk_nesting_ix -=1;
   }  
   
   // thunk open case
-  if (t->ty != THUNK_OPEN) {
+  if (t->ty == THUNK_OPEN) {
     m->thunk_nesting_ix +=1;
   }
 
@@ -111,7 +111,7 @@ int evaluate(Memory *m, Term *t) {
   Term bound_term;
   Term t1,t2;
 
-  if (m->thunk_nesting_ix > 0) {
+  if (m->thunk_nesting_ix > 0 || t->ty != THUNK_OPEN || t->ty != THUNK_CLOSE) {
     return accumulate(m,t);
   }
 
