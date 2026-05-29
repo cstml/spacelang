@@ -16,7 +16,8 @@
   (.or (.map 'string
              (.or
               (.char= #\	)
-              (.char= #\)
+              (.char= #\
+)
               (.char= #\ )))
        (.string= "
 ")))
@@ -123,10 +124,23 @@
   (.let* ((_ (.string= "if")))
     (.identity :if)))
 
+(defun .dup ()
+  (.let* ((_ (.string= "dup")))
+    (.identity :dup)))
+
+(defun .swap ()
+  (.let* ((_ (.string= "swap")))
+    (.identity :swap)))
+
+(defun .drop ()
+  (.let* ((_ (.string= "drop")))
+    (.identity :drop)))
+
 (defun .noop ()
   (.let* ((_ (.or
               (.char= #\ )
-              (.char= #\))))
+              (.char= #\
+))))
     (.identity :noop)))
 
 (defun .describe ()
@@ -145,6 +159,9 @@
 (defun .term ()
   (.or
    (.read (.if))
+   (.read (.dup))
+   (.read (.swap))
+   (.read (.drop))
    (.read (.keyword))
    (.read (.number))
    (.read (.slurp))

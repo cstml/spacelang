@@ -1,18 +1,22 @@
 (defpackage #:spacelang/test
   (:use #:cl
         #:alexandria
-        #:fiveam))
+        #:fiveam
+        #:lparallel))
 (in-package #:spacelang/test)
 
 (require :fiveam)
 
 (def-suite* spacelang-tests)
 
+;; Initialize lparallel kernel for async send tests
+(setf lparallel:*kernel* (lparallel:make-kernel 4))
+
 (defmacro universe-fixture (x)
   "Initialises the test with a new universe and binds the home machine memory."
   `(progn
-     (let* ((*universe (spacelang::init-universe))
-            (*home-machine (spacelang::get-memory :home *universe)))
+     (let* ((spacelang.universe:*universe* (spacelang.universe:init-universe))
+            (*home-machine (spacelang::get-memory :home spacelang.universe:*universe*)))
        ,x)))
 
 (defmacro stack-ends-as (actions-before stack-expected)
@@ -87,15 +91,16 @@ universe-fixture."
 
 (test evaluate-send
   (universe-fixture
-   (is (all-stacks-end-as
-        (evaluate-sequence *home-machine '(1 (a) :send))
-        '((:home . '())
-          (:a . 1 ))))))
+   (progn
+     (evaluate-sequence *home-machine '(1 (a) :send))
+     (sleep 0.2)  ;; wait for async future to complete
+     (is (equal (spacelang::stack *home-machine) '()))
+     (is (equal (spacelang::stack (spacelang::get-memory 'a spacelang.universe:*universe*)) '(1))))))
 
 (test evaluate-binding
   (universe-fixture
    (progn (evaluate-sequence *home-machine '(1 (a) :bind-term))
-          (is (equal '((:home ((a . 1))))  (dictionaries-are *universe))))))
+          (is (equal '((:home ((a . 1))))  (dictionaries-are spacelang.universe:*universe*))))))
 
 (test evaluate-binding
   (universe-fixture
@@ -103,6 +108,39 @@ universe-fixture."
                                              2 (b) :bind-term))
           (is (equal '((:home ((b . 2)
                                (a . 1))))
-                     (dictionaries-are *universe))))))
+                     (dictionaries-are spacelang.universe:*universe*))))))
+
+(test eval-dup
+  (and
+   (universe-fixture
+    (progn
+      (evaluate-sequence *home-machine '(1 :dup))
+      (is (equal (spacelang::stack *home-machine) '(1 1)))))
+   (universe-fixture
+    (progn
+      (evaluate-sequence *home-machine '(1 2 :dup))
+      (is (equal (spacelang::stack *home-machine) '(2 2 1)))))))
+
+(test eval-swap
+  (and
+   (universe-fixture
+    (progn
+      (evaluate-sequence *home-machine '(1 2 :swap))
+      (is (equal (spacelang::stack *home-machine) '(1 2)))))
+   (universe-fixture
+    (progn
+      (evaluate-sequence *home-machine '(1 2 3 :swap))
+      (is (equal (spacelang::stack *home-machine) '(2 3 1)))))))
+
+(test eval-drop
+  (and
+   (universe-fixture
+    (progn
+      (evaluate-sequence *home-machine '(1 2 :drop))
+      (is (equal (spacelang::stack *home-machine) '(1)))))
+   (universe-fixture
+    (progn
+      (evaluate-sequence *home-machine '(1 2 3 :drop :drop))
+      (is (equal (spacelang::stack *home-machine) '(1)))))))
 
 (fiveam:run!)

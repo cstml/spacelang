@@ -7,6 +7,7 @@
   (:import-from #:str #:repeat)
   (:export
    #:universe
+   #:init-universe
    #:space-instances
    #:get-memory
    #:*universe*

@@ -156,6 +156,23 @@ true 0 if false."
         (push! memory t3)
         (push! memory t2))))
 
+(defmethod evaluate ((memory space-memory)
+                     (term (eql :dup)))
+  (let ((x (pop! memory)))
+    (push! memory x)
+    (push! memory x)))
+
+(defmethod evaluate ((memory space-memory)
+                     (term (eql :swap)))
+  (let ((x (pop! memory))
+        (y (pop! memory)))
+    (push! memory x)
+    (push! memory y)))
+
+(defmethod evaluate ((memory space-memory)
+                     (term (eql :drop)))
+  (pop! memory))
+
 (defun f1 (memory f)
   "Pop 1 term, apply function to it."
   (let ((t1 (pop! memory)))
@@ -201,8 +218,11 @@ true 0 if false."
       (/  (f2 memory #'/))
       (>  (f2 memory #'>))
       (<  (f2 memory #'<))
+      ;; stack primitives
+      (dup (let ((x (pop! memory))) (push! memory x) (push! memory x)))
+      (swap (let ((x (pop! memory)) (y (pop! memory))) (push! memory x) (push! memory y)))
+      (drop (pop! memory))
       ;; eval
-
       (eval-term (evaluate memory '!))
       ;; dictionary
       (du (push-dictionary! memory))
