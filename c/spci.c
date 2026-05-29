@@ -1,25 +1,42 @@
 /*
- * spci — single-process spacelang interpreter in C.
+ * spci — spacelang interpreter in C, with mesh transport.
  *
- * Mirrors src/evaluator.lisp semantics for the subset:
+ * Single-process subset:
  *   numbers, strings, words, thunks [...], booleans
  *   + - * / < > <= >= =
  *   dup swap drop if
  *   @ (bind)   ! (eval)   . (print)   , (format)   ~ (describe)
  *   :s (print stack)   :bye (exit)   { comments }
  *
- * Out of scope for v1: $ $! slurp cons dictionary-stack debug.
- * Those land once the supervisor / pipe transport exists.
+ * Inter-machine (with --name X --bus DIR):
+ *   $  (send PUSH, fire-and-forget)
+ *   $! (send EVAL, fire-and-forget)
+ *   $? (send PUSH with timeout-ms; pushes t on ack, nil on timeout)
  *
- * Build: cc -O2 -Wall -Wextra -o spci c/spci.c
- * REPL : ./spci         File: ./spci path.sp
+ * Mesh topology: each machine listens on $BUS/<name>.sock and lazily
+ * connect()s to peers on first send. No supervisor.
+ *
+ * Build: cc -O2 -Wall -Wextra -o c/spci c/spci.c
+ * Run  : ./c/spci file.sp                            # batch
+ *        ./c/spci                                    # REPL
+ *        ./c/spci --name A --bus /tmp/spacelang      # mesh node (+ optional file)
  */
 
+#define _POSIX_C_SOURCE 200809L
 #include <stdio.h>
 #include <stdlib.h>
+#include <stdarg.h>
 #include <string.h>
 #include <ctype.h>
 #include <stdint.h>
+#include <unistd.h>
+#include <errno.h>
+#include <fcntl.h>
+#include <poll.h>
+#include <time.h>
+#include <sys/socket.h>
+#include <sys/un.h>
+#include <sys/stat.h>
 
 /* ---------- values ---------- */
 
@@ -173,6 +190,273 @@ static void print_stack(void) {
     }
 }
 
+/* ---------- value → source string ---------- */
+
+typedef struct { char *buf; size_t len, cap; } SBuf;
+static void sb_putc(SBuf *s, char c) {
+    if (s->len + 2 > s->cap) {
+        s->cap = s->cap ? s->cap * 2 : 64;
+        s->buf = realloc(s->buf, s->cap);
+    }
+    s->buf[s->len++] = c;
+    s->buf[s->len] = 0;
+}
+static void sb_puts(SBuf *s, const char *str) {
+    while (*str) sb_putc(s, *str++);
+}
+static void sb_printf(SBuf *s, const char *fmt, ...) {
+    char tmp[64];
+    va_list ap; va_start(ap, fmt);
+    vsnprintf(tmp, sizeof tmp, fmt, ap);
+    va_end(ap);
+    sb_puts(s, tmp);
+}
+static void format_value(SBuf *s, Value *v) {
+    if (!v) { sb_puts(s, "nil"); return; }
+    switch (v->type) {
+        case V_NUM:  sb_printf(s, "%ld", v->as.num); break;
+        case V_BOOL: sb_puts(s, v->as.boolean ? "true" : "false"); break;
+        case V_STR:  sb_putc(s, '"'); sb_puts(s, v->as.str); sb_putc(s, '"'); break;
+        case V_WORD: sb_puts(s, v->as.word); break;
+        case V_THUNK:
+            sb_putc(s, '[');
+            for (size_t i = 0; i < v->as.thunk.len; i++) {
+                if (i) sb_putc(s, ' ');
+                format_value(s, v->as.thunk.items[i]);
+            }
+            sb_putc(s, ']');
+            break;
+    }
+}
+
+/* ---------- frame I/O ----------
+ *  TAG (1) | ID (4 BE) | LEN (4 BE) | PAYLOAD (LEN bytes utf-8)
+ */
+#define TAG_HELLO 0x01
+#define TAG_PUSH  0x02
+#define TAG_EVAL  0x03
+#define TAG_SYNC  0x04
+#define TAG_ACK   0x05
+
+static int read_n(int fd, void *buf, size_t n) {
+    size_t got = 0;
+    while (got < n) {
+        ssize_t r = read(fd, (char*)buf + got, n - got);
+        if (r == 0) return -1;
+        if (r < 0) { if (errno == EINTR) continue; return -1; }
+        got += r;
+    }
+    return 0;
+}
+static int write_all(int fd, const void *buf, size_t n) {
+    size_t sent = 0;
+    while (sent < n) {
+        ssize_t w = write(fd, (const char*)buf + sent, n - sent);
+        if (w < 0) { if (errno == EINTR) continue; return -1; }
+        sent += w;
+    }
+    return 0;
+}
+static int frame_write(int fd, uint8_t tag, uint32_t id, const char *payload, uint32_t len) {
+    uint8_t hdr[9];
+    hdr[0] = tag;
+    hdr[1] = id >> 24; hdr[2] = id >> 16; hdr[3] = id >> 8; hdr[4] = id;
+    hdr[5] = len >> 24; hdr[6] = len >> 16; hdr[7] = len >> 8; hdr[8] = len;
+    if (write_all(fd, hdr, 9) < 0) return -1;
+    if (len && write_all(fd, payload, len) < 0) return -1;
+    return 0;
+}
+static int frame_read(int fd, uint8_t *tag, uint32_t *id, char **payload, uint32_t *len) {
+    uint8_t hdr[9];
+    if (read_n(fd, hdr, 9) < 0) return -1;
+    *tag = hdr[0];
+    *id  = ((uint32_t)hdr[1]<<24)|((uint32_t)hdr[2]<<16)|((uint32_t)hdr[3]<<8)|hdr[4];
+    *len = ((uint32_t)hdr[5]<<24)|((uint32_t)hdr[6]<<16)|((uint32_t)hdr[7]<<8)|hdr[8];
+    if (*len > 16 * 1024 * 1024) return -1;  /* sanity cap: 16 MiB */
+    if (*len) {
+        *payload = malloc(*len + 1);
+        if (read_n(fd, *payload, *len) < 0) { free(*payload); return -1; }
+        (*payload)[*len] = 0;
+    } else {
+        *payload = NULL;
+    }
+    return 0;
+}
+
+/* ---------- mesh state ---------- */
+
+static char  *my_name = NULL;
+static char  *bus_dir = NULL;
+static int    listen_fd = -1;
+
+typedef struct {
+    char *name;    /* peer name, may be NULL until HELLO received */
+    int   fd;
+    int   outgoing; /* 1 = we connected to them; 0 = they connected to us */
+} Peer;
+
+static Peer  *peers = NULL;
+static size_t peers_len = 0, peers_cap = 0;
+
+static Peer *peer_add(int fd, const char *name, int outgoing) {
+    if (peers_len == peers_cap) {
+        peers_cap = peers_cap ? peers_cap * 2 : 8;
+        peers = realloc(peers, peers_cap * sizeof(Peer));
+    }
+    peers[peers_len] = (Peer){ name ? strdup(name) : NULL, fd, outgoing };
+    return &peers[peers_len++];
+}
+static void peer_drop(size_t i) {
+    if (peers[i].fd >= 0) close(peers[i].fd);
+    free(peers[i].name);
+    peers[i] = peers[peers_len - 1];
+    peers_len--;
+}
+static Peer *peer_find(const char *name) {
+    if (!name) return NULL;
+    for (size_t i = 0; i < peers_len; i++)
+        if (peers[i].name && strcmp(peers[i].name, name) == 0) return &peers[i];
+    return NULL;
+}
+
+/* connect to /tmp/spacelang/<name>.sock, send HELLO, return new peer or NULL */
+static Peer *peer_connect(const char *name) {
+    if (!bus_dir || !my_name) return NULL;
+    char path[104];
+    snprintf(path, sizeof path, "%s/%s.sock", bus_dir, name);
+    int fd = socket(AF_UNIX, SOCK_STREAM, 0);
+    if (fd < 0) return NULL;
+    struct sockaddr_un addr = {0};
+    addr.sun_family = AF_UNIX;
+    snprintf(addr.sun_path, sizeof addr.sun_path, "%s", path);
+
+    /* retry-with-backoff to handle startup race */
+    int tries = 0;
+    while (connect(fd, (struct sockaddr*)&addr, sizeof addr) < 0) {
+        if (++tries > 20) { close(fd); return NULL; }
+        struct timespec ts = { 0, 25 * 1000 * 1000 };  /* 25ms */
+        nanosleep(&ts, NULL);
+    }
+    /* identify ourselves */
+    if (frame_write(fd, TAG_HELLO, 0, my_name, strlen(my_name)) < 0) {
+        close(fd); return NULL;
+    }
+    return peer_add(fd, name, 1);
+}
+
+/* ---------- pending acks for $? ---------- */
+
+typedef struct { uint32_t id; int status; /* 0 pending, 1 acked */ } Pending;
+static Pending *pendings = NULL;
+static size_t pendings_len = 0, pendings_cap = 0;
+static uint32_t next_frame_id = 1;
+
+static void pending_add(uint32_t id) {
+    if (pendings_len == pendings_cap) {
+        pendings_cap = pendings_cap ? pendings_cap * 2 : 16;
+        pendings = realloc(pendings, pendings_cap * sizeof(Pending));
+    }
+    pendings[pendings_len++] = (Pending){ id, 0 };
+}
+static int pending_status(uint32_t id) {
+    for (size_t i = 0; i < pendings_len; i++)
+        if (pendings[i].id == id) return pendings[i].status;
+    return -1;
+}
+static void pending_ack(uint32_t id) {
+    for (size_t i = 0; i < pendings_len; i++)
+        if (pendings[i].id == id) { pendings[i].status = 1; return; }
+}
+static void pending_remove(uint32_t id) {
+    for (size_t i = 0; i < pendings_len; i++)
+        if (pendings[i].id == id) {
+            pendings[i] = pendings[pendings_len - 1];
+            pendings_len--;
+            return;
+        }
+}
+
+/* forward decl: process one frame's payload through the interpreter */
+static void feed(const char *src);
+
+/* dispatch a frame we just received */
+static void on_frame(Peer *p, uint8_t tag, uint32_t id, char *payload, uint32_t len) {
+    switch (tag) {
+        case TAG_HELLO:
+            free(p->name);
+            p->name = payload ? strndup(payload, len) : strdup("?");
+            break;
+        case TAG_PUSH:
+        case TAG_EVAL:
+            if (payload) feed(payload);
+            if (tag == TAG_EVAL) feed("!");
+            break;
+        case TAG_SYNC:
+            if (payload) feed(payload);
+            /* ack on the same connection */
+            frame_write(p->fd, TAG_ACK, id, NULL, 0);
+            break;
+        case TAG_ACK:
+            pending_ack(id);
+            break;
+    }
+    free(payload);
+}
+
+/* pump readable peer fds + accept new connections; non-blocking poll w/ timeout_ms */
+static int mesh_poll(int timeout_ms) {
+    if (listen_fd < 0) return 0;
+    struct pollfd pfds[64];
+    size_t n = 0;
+    pfds[n].fd = listen_fd; pfds[n].events = POLLIN; n++;
+    for (size_t i = 0; i < peers_len && n < 64; i++) {
+        pfds[n].fd = peers[i].fd; pfds[n].events = POLLIN; n++;
+    }
+    int r = poll(pfds, n, timeout_ms);
+    if (r <= 0) return r;
+
+    /* accept */
+    if (pfds[0].revents & POLLIN) {
+        int cfd = accept(listen_fd, NULL, NULL);
+        if (cfd >= 0) peer_add(cfd, NULL, 0);
+    }
+    /* iterate carefully — peer indices may change on disconnect */
+    for (size_t pi = 1; pi < n; pi++) {
+        if (!(pfds[pi].revents & (POLLIN|POLLHUP|POLLERR))) continue;
+        /* find the peer by fd (index may have shifted) */
+        size_t found = (size_t)-1;
+        for (size_t j = 0; j < peers_len; j++)
+            if (peers[j].fd == pfds[pi].fd) { found = j; break; }
+        if (found == (size_t)-1) continue;
+
+        uint8_t tag; uint32_t id, len; char *payload = NULL;
+        if (frame_read(peers[found].fd, &tag, &id, &payload, &len) < 0) {
+            peer_drop(found);
+            continue;
+        }
+        on_frame(&peers[found], tag, id, payload, len);
+    }
+    return r;
+}
+
+/* set up the listen socket at $BUS/$NAME.sock */
+static int mesh_listen(void) {
+    mkdir(bus_dir, 0700);
+    char path[104];
+    snprintf(path, sizeof path, "%s/%s.sock", bus_dir, my_name);
+    unlink(path);  /* clean stale */
+    int fd = socket(AF_UNIX, SOCK_STREAM, 0);
+    if (fd < 0) { perror("socket"); return -1; }
+    struct sockaddr_un addr = {0};
+    addr.sun_family = AF_UNIX;
+    snprintf(addr.sun_path, sizeof addr.sun_path, "%s", path);
+    if (bind(fd, (struct sockaddr*)&addr, sizeof addr) < 0) { perror("bind"); close(fd); return -1; }
+    if (listen(fd, 16) < 0) { perror("listen"); close(fd); return -1; }
+    listen_fd = fd;
+    fprintf(stderr, "[%s] listening on %s\n", my_name, path);
+    return 0;
+}
+
 /* ---------- tokenizer / parser ---------- */
 
 typedef struct { const char *src; size_t i, n; } Lex;
@@ -245,6 +529,25 @@ static Value *parse_term(Lex *L) {
     }
     if (c == '$' && L->i + 1 < L->n && L->src[L->i+1] == '!') {
         L->i += 2; return v_word("$!");
+    }
+    if (c == '$' && L->i + 1 < L->n && L->src[L->i+1] == '?') {
+        L->i += 2; return v_word("$?");
+    }
+
+    /* :keyword */
+    if (c == ':' && L->i + 1 < L->n &&
+        (isalpha((unsigned char)L->src[L->i+1]) || L->src[L->i+1] == '_')) {
+        size_t start = L->i;
+        L->i++;
+        while (L->i < L->n &&
+               (isalnum((unsigned char)L->src[L->i]) || L->src[L->i] == '_'))
+            L->i++;
+        char *buf = malloc(L->i - start + 1);
+        memcpy(buf, L->src + start, L->i - start);
+        buf[L->i - start] = 0;
+        Value *v = v_word(buf);
+        free(buf);
+        return v;
     }
 
     /* single-char ops / punctuation become words too */
@@ -408,6 +711,64 @@ static void eval_word(const char *w) {
         return;
     }
 
+    /* $ $! $? — only meaningful in --name mode */
+    if (!strcmp(w,"$") || !strcmp(w,"$!") || !strcmp(w,"$?")) {
+        int is_sync = !strcmp(w, "$?");
+        int is_eval = !strcmp(w, "$!");
+        long timeout_ms = 0;
+        if (is_sync) {
+            Value *t = pop();
+            timeout_ms = n_of(t); v_unref(t);
+        }
+        Value *binder = pop();
+        Value *term   = pop();
+        const char *name = binding_name(binder);
+        if (!name) {
+            fprintf(stderr, "%s expects [name] as destination\n", w);
+            v_unref(binder); v_unref(term);
+            if (is_sync) push(v_num(0));
+            return;
+        }
+        if (!my_name) {
+            fprintf(stderr, "%s: not in --name mode\n", w);
+            v_unref(binder); v_unref(term);
+            if (is_sync) push(v_num(0));
+            return;
+        }
+        Peer *p = peer_find(name);
+        if (!p) p = peer_connect(name);
+        if (!p) {
+            fprintf(stderr, "%s: cannot reach peer '%s'\n", w, name);
+            v_unref(binder); v_unref(term);
+            if (is_sync) push(v_num(0));
+            return;
+        }
+
+        SBuf sb = {0};
+        format_value(&sb, term);
+        v_unref(binder); v_unref(term);
+
+        uint8_t tag = is_sync ? TAG_SYNC : (is_eval ? TAG_EVAL : TAG_PUSH);
+        uint32_t id = is_sync ? next_frame_id++ : 0;
+        int rc = frame_write(p->fd, tag, id, sb.buf ? sb.buf : "", sb.len);
+        free(sb.buf);
+
+        if (!is_sync) { if (rc < 0) fprintf(stderr, "%s: write failed\n", w); return; }
+
+        pending_add(id);
+        struct timespec t0; clock_gettime(CLOCK_MONOTONIC, &t0);
+        for (;;) {
+            int s = pending_status(id);
+            if (s == 1) { push(v_bool(1)); pending_remove(id); return; }
+            struct timespec now; clock_gettime(CLOCK_MONOTONIC, &now);
+            long elapsed = (now.tv_sec - t0.tv_sec) * 1000
+                         + (now.tv_nsec - t0.tv_nsec) / 1000000;
+            long remaining = timeout_ms - elapsed;
+            if (remaining <= 0) { push(v_num(0)); pending_remove(id); return; }
+            mesh_poll(remaining > 50 ? 50 : (int)remaining);
+        }
+    }
+
     /* :s :bye */
     if (!strcmp(w,":")) {
         /* should never get here as bare token — keywords are parsed as : then word.
@@ -502,11 +863,34 @@ static char *slurp_file(const char *path) {
 }
 
 int main(int argc, char **argv) {
-    if (argc >= 2) {
-        char *src = slurp_file(argv[1]);
+    setvbuf(stdout, NULL, _IOLBF, 0);
+    setvbuf(stderr, NULL, _IOLBF, 0);
+    const char *file_arg = NULL;
+    for (int i = 1; i < argc; i++) {
+        if (!strcmp(argv[i], "--name") && i + 1 < argc) { my_name = argv[++i]; }
+        else if (!strcmp(argv[i], "--bus") && i + 1 < argc) { bus_dir = argv[++i]; }
+        else if (argv[i][0] != '-') { file_arg = argv[i]; }
+        else { fprintf(stderr, "unknown arg: %s\n", argv[i]); return 1; }
+    }
+    if ((my_name && !bus_dir) || (!my_name && bus_dir)) {
+        fprintf(stderr, "--name and --bus must be used together\n"); return 1;
+    }
+
+    if (my_name) {
+        if (mesh_listen() < 0) return 1;
+    }
+
+    if (file_arg) {
+        char *src = slurp_file(file_arg);
         feed(src);
         free(src);
-        return 0;
+        if (!my_name) return 0;
+    }
+
+    if (my_name) {
+        /* mesh event loop: pump frames forever (or until :bye) */
+        fprintf(stderr, "[%s] ready\n", my_name);
+        for (;;) mesh_poll(1000);
     }
 
     /* REPL */
