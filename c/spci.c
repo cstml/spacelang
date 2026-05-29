@@ -888,12 +888,46 @@ int main(int argc, char **argv) {
     }
 
     if (my_name) {
-        /* mesh event loop: pump frames forever (or until :bye) */
-        fprintf(stderr, "[%s] ready\n", my_name);
-        for (;;) mesh_poll(1000);
+        int is_tty = isatty(STDIN_FILENO);
+        fprintf(stderr, "[%s] ready%s\n", my_name, is_tty ? " — REPL on stdin" : "");
+        if (is_tty) { printf("> "); fflush(stdout); }
+        for (;;) {
+            /* poll listen, peers, AND stdin */
+            struct pollfd pfds[64];
+            size_t n = 0;
+            pfds[n].fd = STDIN_FILENO; pfds[n].events = POLLIN; n++;
+            pfds[n].fd = listen_fd;    pfds[n].events = POLLIN; n++;
+            for (size_t i = 0; i < peers_len && n < 64; i++) {
+                pfds[n].fd = peers[i].fd; pfds[n].events = POLLIN; n++;
+            }
+            if (poll(pfds, n, 1000) <= 0) continue;
+
+            if (pfds[0].revents & POLLIN) {
+                char line[4096];
+                if (!fgets(line, sizeof line, stdin)) return 0;
+                feed(line);
+                if (is_tty) { printf("> "); fflush(stdout); }
+            }
+            if (pfds[1].revents & POLLIN) {
+                int cfd = accept(listen_fd, NULL, NULL);
+                if (cfd >= 0) peer_add(cfd, NULL, 0);
+            }
+            for (size_t pi = 2; pi < n; pi++) {
+                if (!(pfds[pi].revents & (POLLIN|POLLHUP|POLLERR))) continue;
+                size_t found = (size_t)-1;
+                for (size_t j = 0; j < peers_len; j++)
+                    if (peers[j].fd == pfds[pi].fd) { found = j; break; }
+                if (found == (size_t)-1) continue;
+                uint8_t tag; uint32_t id, len; char *payload = NULL;
+                if (frame_read(peers[found].fd, &tag, &id, &payload, &len) < 0) {
+                    peer_drop(found); continue;
+                }
+                on_frame(&peers[found], tag, id, payload, len);
+            }
+        }
     }
 
-    /* REPL */
+    /* REPL (no mesh) */
     char line[4096];
     printf("spci · spacelang in C · :bye to quit\n");
     for (;;) {
