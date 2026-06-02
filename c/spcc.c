@@ -1,53 +1,39 @@
 /*
  * spcc — spacelang compiler.
  *
- * High-level design
- * -----------------
- * spcc compiles a .sp source file into a standalone native executable by
- * emitting a single self-contained C file and shelling out to a C compiler.
+ * High-level design (compiler+lib distribution, gcc-style)
+ * --------------------------------------------------------
+ * spcc compiles a .sp source into a standalone native executable by
+ * emitting a small C file and shelling out to a C compiler that links it
+ * against a pre-built runtime archive (libspci.a) and the runtime header
+ * (spci.h).
  *
- * Approach for v1: "packaging compiler".
- *   - The generated .c contains the entire spci runtime (parser + values +
- *     stack + dict + builtins + mesh transport) followed by the user
- *     program embedded as a byte array and a small generated main() that
- *     calls feed(SP_SOURCE) on it.
- *   - Two blobs are linked into spcc at build time via xxd -i:
- *       spci_h_blob (the contents of spci.h)
- *       spci_c_blob (the contents of spci.c)
- *     The header is emitted first so the runtime sees its own declarations
- *     without needing a separate include path at compile-of-generated time.
- *   - spci.c no longer contains main(); that lives in spci_main.c. The
- *     compiled binary supplies its own generated main() instead.
+ * Distribution model: spcc + spci.h + libspci.a ship together in a known
+ * directory (`SPACELANG_ROOT`), conceptually like gcc + libgcc.a + headers
+ * under $GOROOT-style discoverable layout. The compiled output binary is
+ * fully self-contained — the archive is statically linked in.
  *
- * What this buys us:
- *   - Standalone binaries with no install footprint.
- *   - Identical semantics to spci, by construction (same eval loop,
- *     same builtins, same mesh transport).
- *   - Full language including mesh ops ($, $!, $?).
+ * Runtime lookup, in order:
+ *   1. $SPACELANG_ROOT (if set)
+ *   2. dirname(realpath(argv[0]))   — handy in dev when spcc sits next
+ *                                     to spci.h / libspci.a in c/
+ * The first location containing both spci.h and libspci.a wins.
  *
- * What it does NOT buy (and why that's OK for v1):
- *   - No speedup over the interpreter — generated code still threads
- *     through feed() / eval(). A future v2 would lower the AST to opcode
- *     arrays plus a tiny switch-based evaluator and inline builtin
- *     dispatch.
+ * Generated file is small (~1 KB): just `#include "spci.h"`, the user's
+ * .sp source as a byte array, and a generated main() that calls
+ * feed(SP_SOURCE). cc compiles + links it against libspci.a.
  *
- * Mesh contract:
- *   - The generated binary speaks the existing spci mesh protocol unchanged.
- *   - Identity comes from SPACELANG_NAME / SPACELANG_BUS env vars or
- *     --name / --bus flags on the generated binary itself.
- *   - --serve makes the binary stay alive after feed() returns so peers
- *     can keep reaching it. Without --serve, it runs the program and exits.
- *   - Orchestration (spawning peers, lifecycle) lives in the separate
- *     `spco` component and is out of scope here.
+ * Mesh contract: the generated binary speaks the existing spci mesh
+ * protocol. Identity from SPACELANG_NAME / SPACELANG_BUS or --name/--bus
+ * on the generated binary. --serve keeps it alive after feed() returns.
  *
  * CLI
  *   spcc input.sp -o output           compile to ./output
- *   spcc --emit-c input.sp            print generated C to stdout, no compile
- *   spcc --keep-c input.sp -o output  also write output.c next to the binary
+ *   spcc --emit-c input.sp            print generated C to stdout
+ *   spcc --keep-c input.sp -o output  also write output.c next to binary
  *   spcc --cc gcc input.sp -o output  override $CC (default: cc)
- *
- * Build
- *   make c/spcc   (depends on c/spci_blob.h, which xxd -i's both spci.{h,c})
+ *   spcc --debug input.sp -o output   compile with -g -O0, implies --keep-c
+ *   spcc --root DIR input.sp ...      override runtime-source lookup
  */
 
 #define _POSIX_C_SOURCE 200809L
@@ -56,13 +42,10 @@
 #include <string.h>
 #include <unistd.h>
 #include <sys/wait.h>
+#include <sys/stat.h>
+#include <libgen.h>
 #include <errno.h>
-
-#include "spci_blob.h"
-/* spci_blob.h provides:
- *   unsigned char spci_h[]; unsigned int spci_h_len;
- *   unsigned char spci_c[]; unsigned int spci_c_len;
- */
+#include <limits.h>
 
 static void die(const char *msg) {
     fprintf(stderr, "spcc: %s\n", msg);
@@ -84,41 +67,41 @@ static char *slurp(const char *path, size_t *out_len) {
     return buf;
 }
 
-/* The runtime's spci.c starts with `#include "spci.h"`. In the generated
- * single-file output, that include can't resolve. We strip it by skipping
- * the first occurrence of the matching line when emitting the runtime. */
-static void emit_runtime_stripping_self_include(FILE *out) {
-    const char *needle = "#include \"spci.h\"";
-    size_t nlen = strlen(needle);
-    /* find first occurrence */
-    size_t hit = (size_t)-1;
-    for (size_t i = 0; i + nlen <= spci_c_len; i++) {
-        if (memcmp(spci_c + i, needle, nlen) == 0) { hit = i; break; }
+static int file_exists(const char *path) {
+    struct stat st;
+    return stat(path, &st) == 0 && S_ISREG(st.st_mode);
+}
+
+static int root_has_runtime(const char *root) {
+    char p[PATH_MAX];
+    snprintf(p, sizeof p, "%s/spci.h",    root); if (!file_exists(p)) return 0;
+    snprintf(p, sizeof p, "%s/libspci.a", root); if (!file_exists(p)) return 0;
+    return 1;
+}
+
+/* find SPACELANG_ROOT — env override, then next to the spcc binary. */
+static char *find_root(void) {
+    const char *env = getenv("SPACELANG_ROOT");
+    if (env && *env && root_has_runtime(env)) return strdup(env);
+
+    char exe[PATH_MAX];
+    ssize_t n = readlink("/proc/self/exe", exe, sizeof exe - 1);
+    if (n > 0) {
+        exe[n] = 0;
+        char *dup = strdup(exe);
+        char *d = dirname(dup);
+        if (root_has_runtime(d)) { char *r = strdup(d); free(dup); return r; }
+        free(dup);
     }
-    if (hit == (size_t)-1) {
-        fwrite(spci_c, 1, spci_c_len, out);
-        return;
-    }
-    /* extend hit to end of line */
-    size_t end = hit + nlen;
-    while (end < spci_c_len && spci_c[end] != '\n') end++;
-    if (end < spci_c_len) end++; /* eat the newline */
-    fwrite(spci_c, 1, hit, out);
-    fwrite(spci_c + end, 1, spci_c_len - end, out);
+    return NULL;
 }
 
 static void emit(FILE *out, const char *sp_src, size_t sp_len) {
     fputs("/* generated by spcc - do not edit by hand */\n", out);
+    fputs("#define _POSIX_C_SOURCE 200809L\n", out);
+    fputs("#include <stdio.h>\n#include <stdlib.h>\n#include <string.h>\n", out);
+    fputs("#include \"spci.h\"\n", out);
 
-    /* 1. Inline the public header so the runtime sees its own decls. */
-    fwrite(spci_h, 1, spci_h_len, out);
-    fputc('\n', out);
-
-    /* 2. Inline the runtime (with its self-include stripped). */
-    emit_runtime_stripping_self_include(out);
-    fputc('\n', out);
-
-    /* 3. Embed the user program as a NUL-terminated byte array. */
     fputs("\nstatic const char SP_SOURCE[] = {\n", out);
     for (size_t i = 0; i < sp_len; i++) {
         fprintf(out, "0x%02x,", (unsigned char)sp_src[i]);
@@ -126,7 +109,6 @@ static void emit(FILE *out, const char *sp_src, size_t sp_len) {
     }
     fputs("0x00};\n", out);
 
-    /* 4. Generated driver — uses the public surface from spci.h. */
     fputs(
         "\n"
         "int main(int argc, char **argv) {\n"
@@ -151,14 +133,19 @@ static void emit(FILE *out, const char *sp_src, size_t sp_len) {
         out);
 }
 
-static int run_cc(const char *cc, const char *cfile, const char *output, int debug) {
+static int run_cc(const char *cc, const char *root,
+                  const char *cfile, const char *output, int debug) {
+    char lib[PATH_MAX], inc[PATH_MAX + 2];
+    snprintf(lib, sizeof lib, "%s/libspci.a", root);
+    snprintf(inc, sizeof inc, "-I%s", root);
+
     pid_t pid = fork();
     if (pid < 0) { perror("fork"); return -1; }
     if (pid == 0) {
         if (debug)
-            execlp(cc, cc, "-g", "-O0", "-w", cfile, "-o", output, (char*)NULL);
+            execlp(cc, cc, "-g", "-O0", "-w", inc, cfile, lib, "-o", output, (char*)NULL);
         else
-            execlp(cc, cc, "-O2", "-w", cfile, "-o", output, (char*)NULL);
+            execlp(cc, cc, "-O2",       "-w", inc, cfile, lib, "-o", output, (char*)NULL);
         perror(cc);
         _exit(127);
     }
@@ -170,7 +157,8 @@ static int run_cc(const char *cc, const char *cfile, const char *output, int deb
 
 static void usage(void) {
     fputs(
-        "usage: spcc [--emit-c] [--keep-c] [--cc CC] input.sp [-o output]\n",
+        "usage: spcc [--emit-c] [--keep-c] [--debug] [--cc CC] [--root DIR]\n"
+        "            input.sp [-o output]\n",
         stderr);
 }
 
@@ -179,6 +167,7 @@ int main(int argc, char **argv) {
     const char *output = NULL;
     const char *cc = getenv("CC");
     if (!cc || !*cc) cc = "cc";
+    const char *root_override = NULL;
     int emit_c_only = 0;
     int keep_c = 0;
     int debug = 0;
@@ -188,10 +177,9 @@ int main(int argc, char **argv) {
         else if (!strcmp(argv[i], "--keep-c")) keep_c = 1;
         else if (!strcmp(argv[i], "--debug") || !strcmp(argv[i], "-g")) { debug = 1; keep_c = 1; }
         else if (!strcmp(argv[i], "--cc") && i+1 < argc) cc = argv[++i];
+        else if (!strcmp(argv[i], "--root") && i+1 < argc) root_override = argv[++i];
         else if (!strcmp(argv[i], "-o") && i+1 < argc) output = argv[++i];
-        else if (!strcmp(argv[i], "-h") || !strcmp(argv[i], "--help")) {
-            usage(); return 0;
-        }
+        else if (!strcmp(argv[i], "-h") || !strcmp(argv[i], "--help")) { usage(); return 0; }
         else if (argv[i][0] == '-') {
             fprintf(stderr, "spcc: unknown flag: %s\n", argv[i]);
             usage(); return 1;
@@ -208,16 +196,33 @@ int main(int argc, char **argv) {
         output = o;
     }
 
+    char *root = NULL;
+    if (root_override) {
+        if (!root_has_runtime(root_override)) {
+            fprintf(stderr, "spcc: --root %s: missing spci.h/libspci.a\n", root_override);
+            return 1;
+        }
+        root = strdup(root_override);
+    } else {
+        root = find_root();
+        if (!root) {
+            fprintf(stderr,
+                "spcc: cannot locate runtime (spci.h, libspci.a).\n"
+                "      Set SPACELANG_ROOT or pass --root DIR.\n");
+            return 1;
+        }
+    }
+
     size_t sp_len = 0;
     char *sp_src = slurp(input, &sp_len);
 
     if (emit_c_only) {
         emit(stdout, sp_src, sp_len);
-        free(sp_src);
+        free(sp_src); free(root);
         return 0;
     }
 
-    char cpath[4096];
+    char cpath[PATH_MAX];
     if (keep_c) snprintf(cpath, sizeof cpath, "%s.c", output);
     else        snprintf(cpath, sizeof cpath, "/tmp/spcc-%d.c", (int)getpid());
 
@@ -227,8 +232,9 @@ int main(int argc, char **argv) {
     fclose(cf);
     free(sp_src);
 
-    int rc = run_cc(cc, cpath, output, debug);
+    int rc = run_cc(cc, root, cpath, output, debug);
     if (!keep_c) unlink(cpath);
+    free(root);
     if (rc != 0) { fprintf(stderr, "spcc: %s failed\n", cc); return 3; }
     return 0;
 }
