@@ -187,6 +187,24 @@ Stepping into the runtime works because `program.c` `#include`s `spci.h`
 and the linker uses `libspci.a` built from `spci.c`; line numbers map
 back to the runtime source.
 
+## Testing
+
+```sh
+make c
+python3 c/test_harness.py              # all tests (unit + compile + mesh + property)
+python3 c/test_harness.py --quick      # skip mesh tests (faster)
+python3 c/test_harness.py --seed 42    # repeatable property test seed
+```
+
+Four test classes:
+
+| Class           | What it covers                                    |
+|-----------------|---------------------------------------------------|
+| `TestEval`      | Language semantics via spci REPL                  |
+| `TestCompile`   | spcc binary matches spci output byte-for-byte     |
+| `TestProperty`  | 200 random balanced programs → no segfaults       |
+| `TestMesh`      | spco + spci nodes over real Unix sockets          |
+
 ## Mesh orchestration with `spco`
 
 `spco` is a name-resolution broker. It listens on `$BUS/spco.sock` and
