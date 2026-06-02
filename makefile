@@ -1,56 +1,31 @@
-lisp_files := $(wildcard *.lisp)
-asd_files := $(wildcard *.asd)
+.PHONY: all clean test DockerRun
 
-bin/spci: bin/ $(lisp_files) $(asd_files)
-	sbcl --disable-debugger \
-	     --eval '(ql:quickload "spacelang")' \
-	     --eval '(asdf:load-system "spacelang")' \
-	     --eval '(use-package :spacelang)' \
-	     --eval "(sb-ext:save-lisp-and-die #p\"bin/spci\" :toplevel #'space! :executable t)"
+all: spci spcc spco libspci.a
 
-bin/:
-	mkdir bin
+spci.o: spci.c spci.h
+	cc -O2 -Wall -Wextra -c -o $@ spci.c
 
-.PHONY: c c-clean DockerRun
-
-c: c/spci c/spcc c/spco c/libspci.a
-
-c/spci.o: c/spci.c c/spci.h
-	cc -O2 -Wall -Wextra -c -o $@ c/spci.c
-
-c/libspci.a: c/spci.o
+libspci.a: spci.o
 	ar rcs $@ $<
 
-c/spci: c/spci.o c/spci_main.c c/spci.h
-	cc -O2 -Wall -Wextra -o $@ c/spci_main.c c/spci.o
+spci: spci.o spci_main.c spci.h
+	cc -O2 -Wall -Wextra -o $@ spci_main.c spci.o
 
-c/spcc: c/spcc.c
-	cc -O2 -Wall -Wextra -o $@ c/spcc.c
+spcc: spcc.c
+	cc -O2 -Wall -Wextra -o $@ spcc.c
 
-c/spco: c/spco.c c/spci.h c/libspci.a
-	cc -O2 -Wall -Wextra -o $@ c/spco.c c/libspci.a
+spco: spco.c spci.h libspci.a
+	cc -O2 -Wall -Wextra -o $@ spco.c libspci.a
 
-c-clean:
-	rm -f c/spci c/spcc c/spco c/spci.o c/libspci.a
+clean:
+	rm -f spci spcc spco spci.o libspci.a
 
+test:
+	python3 test_harness.py
+
+test-quick:
+	python3 test_harness.py --quick
 
 DockerRun:
 	docker build . -t spacelang
 	docker run -it spacelang
-
-compiler:
-	sbcl \
-    --disable-debugger \
-	  --eval '(ql:quickload "spacelang")' \
-	  --eval '(asdf:load-system "spacelang")' \
-	  --eval '(use-package :spacelang.compiler)' \
-    --eval '(compiler)'
-
-bake:
-	sbcl --disable-debugger \
-	     --eval '(ql:quickload "spacelang")' \
-	     --eval '(asdf:load-system "spacelang")' \
-	     --eval '(use-package :spacelang.compiler)' \
-       --eval '(bake-binary\
-									 #p "/home/cstml/.quicklisp/local-projects/spacelang/bin/baked"\
-									 #p"/home/cstml/.quicklisp/local-projects/spacelang/example/add_2.sp")'

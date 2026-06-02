@@ -30,10 +30,10 @@ import tempfile
 import shutil
 from pathlib import Path
 
-C_DIR = Path(__file__).resolve().parent
-SPCI  = str(C_DIR / "spci")
-SPCC  = str(C_DIR / "spcc")
-SPCO  = str(C_DIR / "spco")
+ROOT = Path(__file__).resolve().parent
+SPCI  = str(ROOT / "spci")
+SPCC  = str(ROOT / "spcc")
+SPCO  = str(ROOT / "spco")
 BUS   = "/tmp/spacelang_test"
 
 # ── helpers ──────────────────────────────────────────────────────────
@@ -237,7 +237,7 @@ class TestCompile(unittest.TestCase):
         self.skipTest("add_2.sp is interactive, needs stdin typing")
 
     def test_example_fib(self):
-        src = (C_DIR / "../example/fibonacci.sp").read_text()
+        src = (ROOT / "example/fibonacci.sp").read_text()
         self.compile_and_compare(src, "")
 
 

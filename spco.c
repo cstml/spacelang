@@ -21,7 +21,7 @@
  *   spco [--bus DIR] NAME=CMD ...
  *
  * Examples
- *   spco A='./c/spci --serve a.sp'   B='./c/spci --serve b.sp'
+ *   spco A='./spci --serve a.sp'   B='./spci --serve b.sp'
  *   spco A='./a_compiled --serve'    B='./b_compiled --serve'
  *
  * Child supervision:

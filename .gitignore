@@ -6,9 +6,8 @@
 /.direnv/
 /spacelang
 /bin/
-c/spci
-c/spcc
-c/spco
-c/spci.o
-c/libspci.a
-c/run
+spci
+spcc
+spco
+spci.o
+libspci.a
