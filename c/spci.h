@@ -37,9 +37,20 @@ extern size_t peers_len;
 Peer *peer_add(int fd, const char *name, int outgoing);
 void  peer_drop(size_t i);
 
-/* --- framing --- */
+/* --- framing ---
+ *   TAG (1) | ID (4 BE) | LEN (4 BE) | PAYLOAD (LEN bytes utf-8) */
+#define TAG_HELLO  0x01
+#define TAG_PUSH   0x02
+#define TAG_EVAL   0x03
+#define TAG_SYNC   0x04
+#define TAG_ACK    0x05
+#define TAG_LOOKUP 0x06   /* sender → spco: "where is <name>?" payload = name */
+#define TAG_ADDR   0x07   /* spco → sender: "here it is" payload = socket path */
+
 int  frame_read(int fd, uint8_t *tag, uint32_t *id,
                 char **payload, uint32_t *len);
+int  frame_write(int fd, uint8_t tag, uint32_t id,
+                 const char *payload, uint32_t len);
 void on_frame(Peer *p, uint8_t tag, uint32_t id,
               char *payload, uint32_t len);
 

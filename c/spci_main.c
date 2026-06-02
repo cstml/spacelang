@@ -62,24 +62,29 @@ int main(int argc, char **argv) {
         for (;;) {
             struct pollfd pfds[64];
             size_t n = 0;
-            pfds[n].fd = STDIN_FILENO; pfds[n].events = POLLIN; n++;
-            pfds[n].fd = listen_fd;    pfds[n].events = POLLIN; n++;
+            size_t stdin_slot = (size_t)-1;
+            if (is_tty) {
+                stdin_slot = n;
+                pfds[n].fd = STDIN_FILENO; pfds[n].events = POLLIN; n++;
+            }
+            size_t listen_slot = n;
+            pfds[n].fd = listen_fd; pfds[n].events = POLLIN; n++;
             for (size_t i = 0; i < peers_len && n < 64; i++) {
                 pfds[n].fd = peers[i].fd; pfds[n].events = POLLIN; n++;
             }
             if (poll(pfds, n, 1000) <= 0) continue;
 
-            if (pfds[0].revents & POLLIN) {
+            if (stdin_slot != (size_t)-1 && (pfds[stdin_slot].revents & POLLIN)) {
                 char line[4096];
                 if (!fgets(line, sizeof line, stdin)) return 0;
                 feed(line);
-                if (is_tty) { printf("> "); fflush(stdout); }
+                printf("> "); fflush(stdout);
             }
-            if (pfds[1].revents & POLLIN) {
+            if (pfds[listen_slot].revents & POLLIN) {
                 int cfd = accept(listen_fd, NULL, NULL);
                 if (cfd >= 0) peer_add(cfd, NULL, 0);
             }
-            for (size_t pi = 2; pi < n; pi++) {
+            for (size_t pi = listen_slot + 1; pi < n; pi++) {
                 if (!(pfds[pi].revents & (POLLIN|POLLHUP|POLLERR))) continue;
                 size_t found = (size_t)-1;
                 for (size_t j = 0; j < peers_len; j++)
