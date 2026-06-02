@@ -1,11 +1,4 @@
 *~
-*fasl
-*#
-*#*
-/system-index.txt
-/.direnv/
-/spacelang
-/bin/
 spci
 spcc
 spco
