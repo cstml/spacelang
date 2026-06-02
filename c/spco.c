@@ -21,8 +21,8 @@
  *   spco [--bus DIR] NAME=CMD ...
  *
  * Examples
- *   spco A='./c/spci a.sp'   B='./c/spci b.sp'
- *   spco A='./a_compiled --serve'  B='./b_compiled --serve'
+ *   spco A='./c/spci --serve a.sp'   B='./c/spci --serve b.sp'
+ *   spco A='./a_compiled --serve'    B='./b_compiled --serve'
  *
  * Child supervision:
  *   - Lazy spawn — children start when the first LOOKUP arrives, not at boot.
