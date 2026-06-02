@@ -1,16 +1,17 @@
 # spacelang in C
 
 A C implementation of spacelang: a concatenative, stack-based language with
-mesh transport. Ships as two binaries plus a runtime library:
+mesh transport. Ships as three binaries plus a runtime library:
 
 - **`spci`** — interactive interpreter (REPL + file mode + mesh node).
 - **`spcc`** — compiler: turns a `.sp` file into a standalone native binary.
+- **`spco`** — orchestrator: name-resolution broker, lazy-spawns peers on demand.
 - **`libspci.a`** + **`spci.h`** — the runtime, linked into programs `spcc` produces.
 
 ## Build
 
 ```sh
-make c           # builds spci, spcc, libspci.a
+make c           # builds spci, spcc, spco, libspci.a
 make c-clean
 ```
 
@@ -24,6 +25,7 @@ Requires a C compiler (`cc`) and `ar`. No other deps.
 | `spci.c`       | Definitions: values, stack, dict, parser, builtins, frame I/O, mesh polling.  |
 | `spci_main.c`  | Driver for the interactive `spci` binary: argv parsing + REPL/event loop.     |
 | `spcc.c`       | The compiler: emits a small `.c` and links it against `libspci.a`.            |
+| `spco.c`       | The orchestrator: LOOKUP/ADDR broker, lazy-spawns children, crash backoff.    |
 | `libspci.a`    | Archive of `spci.o`; what `spcc`-produced binaries link against.              |
 
 ## Language reference
@@ -182,9 +184,77 @@ Stepping into the runtime works because `program.c` `#include`s `spci.h`
 and the linker uses `libspci.a` built from `spci.c`; line numbers map
 back to the runtime source.
 
-## Mesh orchestration
+## Mesh orchestration with `spco`
 
-`spci` and `spcc`-produced binaries do not spawn each other or manage
-peer lifecycles. That's the job of a separate component (`spco`), to be
-built later. The design rationale is in
+`spco` is a name-resolution broker. It listens on `$BUS/spco.sock` and
+handles LOOKUP requests from peers that can't find a direct socket.
+
+### How it works
+
+1. A sender tries `$BUS/<peer>.sock` directly.
+2. If that fails, it sends `LOOKUP "peer"` to `spco`.
+3. `spco` spawns the peer (if not already running) and returns `ADDR /path/to/peer.sock`.
+4. The sender connects directly to the peer — `spco` stays out of the data path.
+
+### CLI
+
+```sh
+spco [-v|--verbose] [--bus DIR] NAME=CMD ...
+```
+
+Each `NAME=CMD` declares a peer: `NAME` is the mesh identity, `CMD` is the
+command to spawn (split on whitespace). `spco` appends `--name NAME --bus DIR`
+and sets `SPACELANG_NAME`/`SPACELANG_BUS` in the child's environment.
+
+### Examples
+
+```sh
+# Two workers defined by source files
+./c/spco -v --bus /tmp/spacelang A='./c/spci a.sp' B='./c/spci b.sp'
+
+# Using compiled binaries with --serve
+./c/spco --bus /tmp/spacelang \
+  A='./a_compiled --serve' \
+  B='./b_compiled --serve'
+```
+
+### Child lifecycle
+
+- **Lazy spawn** — children start on first LOOKUP, not at boot.
+- **Crash backoff** — on exit, restart on next LOOKUP after exponential
+  backoff (100ms → 200ms → 400ms … capped at 5s).
+- **Graceful shutdown** — on SIGINT/SIGTERM, `spco` sends SIGTERM to all
+  children, waits 100ms, then unlinks sockets and exits.
+
+### Verbose mode
+
+`-v` or `--verbose` prints a per-request trace:
+
+```
+[spco] listening on /tmp/spacelang/spco.sock, 2 entries
+[spco]   A → ./c/spci
+[spco]   B → ./c/spci
+[spco] client connected
+[spco] LOOKUP "A"
+[spco] lazy-spawning A
+[spco] spawn A pid=12345 cmd=./c/spci
+[spco] A bound at /tmp/spacelang/A.sock
+[spco] → ADDR /tmp/spacelang/A.sock
+```
+
+Without `-v`, only essential messages (startup, errors, shutdown) are shown.
+
+### End-to-end example
+
+```sh
+# Terminal 1: start the orchestrator
+./c/spco -v --bus /tmp/spacelang W='./c/spci --bus /tmp/spacelang worker.sp'
+
+# Terminal 2: send to W — spco spawns it on demand
+./c/spci --name DRIVER --bus /tmp/spacelang
+> [ 42 ] [W] $? 2000 .
+t
+```
+
+The design rationale is in
 `../docs/superpowers/specs/2026-06-02-spcc-c-compiler-design.md`.
