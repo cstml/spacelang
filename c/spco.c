@@ -60,8 +60,9 @@ typedef struct {
 static Entry  *entries = NULL;
 static size_t  entries_len = 0, entries_cap = 0;
 static char   *o_bus = "/tmp/spacelang";
-static char    o_listen_path[120];
+static char    o_listen_path[108];  /* sizeof(sockaddr_un.sun_path) */
 static int     o_listen = -1;
+static int     verbose = 0;
 
 static long now_ms(void) {
     struct timespec ts; clock_gettime(CLOCK_MONOTONIC, &ts);
@@ -124,7 +125,7 @@ static int sock_exists(const char *path) {
 
 static int spawn(Entry *e) {
     /* clean stale socket so child can bind fresh */
-    char path[120]; sock_path_for(e->name, path, sizeof path);
+    char path[108]; sock_path_for(e->name, path, sizeof path);
     unlink(path);
 
     pid_t pid = fork();
@@ -137,14 +138,16 @@ static int spawn(Entry *e) {
         _exit(127);
     }
     e->pid = pid;
-    fprintf(stderr, "[spco] spawn %s pid=%d cmd=%s\n",
-            e->name, pid, e->argv[0]);
+    if (verbose) {
+        fprintf(stderr, "[spco] spawn %s pid=%d cmd=%s\n",
+                e->name, pid, e->argv[0]);
+    }
     return 0;
 }
 
 /* Spawn (if needed) and wait briefly for child to bind. */
 static int ensure_ready(Entry *e) {
-    char path[120]; sock_path_for(e->name, path, sizeof path);
+    char path[108]; sock_path_for(e->name, path, sizeof path);
 
     if (e->pid == 0) {
         long now = now_ms();
@@ -153,11 +156,17 @@ static int ensure_ready(Entry *e) {
                     e->name, e->next_spawn_ms - now);
             return 0;
         }
+        if (verbose) fprintf(stderr, "[spco] lazy-spawning %s\n", e->name);
         if (spawn(e) < 0) return 0;
+    } else {
+        if (verbose) fprintf(stderr, "[spco] %s already running (pid=%d)\n", e->name, e->pid);
     }
     /* wait up to ~1s for the bind */
     for (int i = 0; i < 40; i++) {
-        if (sock_exists(path)) return 1;
+        if (sock_exists(path)) {
+            if (verbose) fprintf(stderr, "[spco] %s bound at %s\n", e->name, path);
+            return 1;
+        }
         struct timespec ts = { 0, 25 * 1000 * 1000 };
         nanosleep(&ts, NULL);
     }
@@ -166,20 +175,32 @@ static int ensure_ready(Entry *e) {
 }
 
 static void handle_client(int cfd) {
+    if (verbose) fprintf(stderr, "[spco] client connected\n");
     uint8_t tag; uint32_t id, len; char *payload = NULL;
-    if (frame_read(cfd, &tag, &id, &payload, &len) < 0) { close(cfd); return; }
-    if (tag != TAG_LOOKUP || !payload) { free(payload); close(cfd); return; }
+    if (frame_read(cfd, &tag, &id, &payload, &len) < 0) {
+        if (verbose) fprintf(stderr, "[spco] client read failed, closing\n");
+        close(cfd); return;
+    }
+    if (tag != TAG_LOOKUP || !payload) {
+        fprintf(stderr, "[spco] bad frame tag=0x%02x, closing\n", tag);
+        free(payload); close(cfd); return;
+    }
 
+    if (verbose) fprintf(stderr, "[spco] LOOKUP \"%s\"\n", payload);
     Entry *e = find_entry(payload);
     if (!e) {
-        fprintf(stderr, "[spco] unknown name: %s\n", payload);
+        fprintf(stderr, "[spco] unknown name \"%s\"\n", payload);
         free(payload); close(cfd); return;
     }
     free(payload);
 
-    if (!ensure_ready(e)) { close(cfd); return; }
+    if (!ensure_ready(e)) {
+        fprintf(stderr, "[spco] cannot bring up %s\n", e->name);
+        close(cfd); return;
+    }
 
-    char path[120]; sock_path_for(e->name, path, sizeof path);
+    char path[108]; sock_path_for(e->name, path, sizeof path);
+    if (verbose) fprintf(stderr, "[spco] → ADDR %s\n", path);
     frame_write(cfd, TAG_ADDR, 0, path, strlen(path));
     close(cfd);
 }
@@ -195,9 +216,12 @@ static void reap_children(void) {
                 for (int k = 1; k < entries[i].crashes && backoff < 5000; k++)
                     backoff *= 2;
                 entries[i].next_spawn_ms = now_ms() + backoff;
-                fprintf(stderr,
-                    "[spco] %s exited (status=%d crashes=%d backoff=%ldms)\n",
-                    entries[i].name, status, entries[i].crashes, backoff);
+                if (verbose) {
+                    int ex = WIFEXITED(status) ? WEXITSTATUS(status) : -1;
+                    fprintf(stderr,
+                        "[spco] %s exited (code=%d crashes=%d backoff=%ldms)\n",
+                        entries[i].name, ex, entries[i].crashes, backoff);
+                }
                 break;
             }
         }
@@ -216,7 +240,7 @@ static void cleanup_and_exit(int code) {
     struct timespec ts = { 0, 100 * 1000 * 1000 };
     nanosleep(&ts, NULL);
     for (size_t i = 0; i < entries_len; i++) {
-        char p[120]; sock_path_for(entries[i].name, p, sizeof p);
+        char p[108]; sock_path_for(entries[i].name, p, sizeof p);
         unlink(p);
     }
     if (o_listen >= 0) close(o_listen);
@@ -225,14 +249,21 @@ static void cleanup_and_exit(int code) {
 }
 
 static void usage(void) {
-    fputs("usage: spco [--bus DIR] NAME=CMD ...\n", stderr);
+    fputs(
+        "usage: spco [-v|--verbose] [--bus DIR] NAME=CMD ...\n"
+        "  -v, --verbose   show per-request trace (spawn, LOOKUP, ADDR)\n"
+        "  --bus DIR       bus directory (default: /tmp/spacelang)\n"
+        "  NAME=CMD        peer name and command to spawn on LOOKUP\n",
+        stderr);
 }
 
 int main(int argc, char **argv) {
     setvbuf(stderr, NULL, _IOLBF, 0);
 
     for (int i = 1; i < argc; i++) {
-        if (!strcmp(argv[i], "--bus") && i+1 < argc) o_bus = argv[++i];
+        if (!strcmp(argv[i], "-v") || !strcmp(argv[i], "--verbose")) {
+            verbose = 1;
+        } else if (!strcmp(argv[i], "--bus") && i+1 < argc) o_bus = argv[++i];
         else if (!strcmp(argv[i], "-h") || !strcmp(argv[i], "--help")) {
             usage(); return 0;
         }
@@ -271,6 +302,9 @@ int main(int argc, char **argv) {
 
     fprintf(stderr, "[spco] listening on %s, %zu entries\n",
             o_listen_path, entries_len);
+    if (verbose)
+        for (size_t i = 0; i < entries_len; i++)
+            fprintf(stderr, "[spco]   %s → %s\n", entries[i].name, entries[i].argv[0]);
 
     while (!stop) {
         struct pollfd pfd = { o_listen, POLLIN, 0 };

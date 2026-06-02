@@ -13,7 +13,7 @@ bin/:
 
 .PHONY: c c-clean DockerRun
 
-c: c/spci c/spcc c/libspci.a
+c: c/spci c/spcc c/spco c/libspci.a
 
 c/spci.o: c/spci.c c/spci.h
 	cc -O2 -Wall -Wextra -c -o $@ c/spci.c
@@ -27,8 +27,11 @@ c/spci: c/spci.o c/spci_main.c c/spci.h
 c/spcc: c/spcc.c
 	cc -O2 -Wall -Wextra -o $@ c/spcc.c
 
+c/spco: c/spco.c c/spci.h c/libspci.a
+	cc -O2 -Wall -Wextra -o $@ c/spco.c c/libspci.a
+
 c-clean:
-	rm -f c/spci c/spcc c/spci.o c/libspci.a c/spci_blob.h
+	rm -f c/spci c/spcc c/spco c/spci.o c/libspci.a c/spci_blob.h
 
 
 DockerRun:
