@@ -31,7 +31,7 @@ c/spco: c/spco.c c/spci.h c/libspci.a
 	cc -O2 -Wall -Wextra -o $@ c/spco.c c/libspci.a
 
 c-clean:
-	rm -f c/spci c/spcc c/spco c/spci.o c/libspci.a c/spci_blob.h
+	rm -f c/spci c/spcc c/spco c/spci.o c/libspci.a
 
 
 DockerRun:
