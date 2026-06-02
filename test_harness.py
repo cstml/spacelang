@@ -14,7 +14,7 @@ Design (FDB/TigerBeetle inspired):
     for crash-free evaluation and stack invariants.
   - Mesh fault tests: kill nodes mid-flight, verify spco backoff/recovery.
 
-Prerequisites: `make c` must succeed first.
+Prerequisites: `make` must succeed first.
 """
 
 import subprocess
@@ -237,8 +237,20 @@ class TestCompile(unittest.TestCase):
         self.skipTest("add_2.sp is interactive, needs stdin typing")
 
     def test_example_fib(self):
-        src = (ROOT / "example/fibonacci.sp").read_text()
-        self.compile_and_compare(src, "")
+        # fibonacci.sp reads count from stdin via slurp eval
+        sp = Path(self.tmp) / "fib.sp"
+        sp.write_text((ROOT / "example/fibonacci.sp").read_text())
+        bin_path = str(Path(self.tmp) / "fib_bin")
+
+        out_spci, err, rc = run_spci(stdin="5\n", args=[str(sp)])
+        self.assertEqual(rc, 0, f"spci failed: {err}")
+        self.assertIn("1\n1\n2\n3\n5\n8", out_spci)
+
+        r = spcc_compile(sp, bin_path)
+        self.assertEqual(r.returncode, 0, f"spcc failed:\n{r.stderr}")
+        p = subprocess.run([bin_path], input="5\n", capture_output=True, text=True, timeout=5)
+        self.assertEqual(p.returncode, 0)
+        self.assertIn("1\n1\n2\n3\n5\n8", p.stdout)
 
 
 # ── property tests: random term sequences ─────────────────────────────

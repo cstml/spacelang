@@ -60,11 +60,11 @@
 
 
   " ,] [newPage] @
-[(slurp  newPage ! )] [waitForCharacter] @
+[slurp newPage !] [waitForCharacter] @
 
 [:s] [results] @
 
-[ print waitForCharacter ! ] [printThenWait] @
+[ . waitForCharacter ! ] [printThenWait] @
 "Hello and welcome to TechDive presentation of spacelang" ,
 waitForCharacter !
 

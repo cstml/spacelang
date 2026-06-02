@@ -1,1 +1,1 @@
-slurp slurp + . 
+slurp eval slurp eval + . 
