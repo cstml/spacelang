@@ -11,7 +11,22 @@ bin/spci: bin/ $(lisp_files) $(asd_files)
 bin/:
 	mkdir bin
 
-.PHONY: DockerRun
+.PHONY: c c-clean DockerRun
+
+c: c/spci c/spcc
+
+c/spci: c/spci.c c/spci.h c/spci_main.c
+	cc -O2 -Wall -Wextra -o $@ c/spci.c c/spci_main.c
+
+c/spci_blob.h: c/spci.c c/spci.h
+	cd c && xxd -i spci.h >  spci_blob.h && xxd -i spci.c >> spci_blob.h
+
+c/spcc: c/spcc.c c/spci_blob.h
+	cc -O2 -Wall -Wextra -o $@ c/spcc.c
+
+c-clean:
+	rm -f c/spci c/spcc c/spci_blob.h
+
 
 DockerRun:
 	docker build . -t spacelang

@@ -6,6 +6,7 @@
  *   + - * / < > <= >= =
  *   dup swap drop if
  *   @ (bind)   ! (eval)   . (print)   , (format)   ~ (describe)
+ *   slurp (read line from stdin → string)   eval (pop string → feed)
  *   :s (print stack)   :bye (exit)   { comments }
  *
  * Inter-machine (with --name X --bus DIR):
@@ -37,6 +38,8 @@
 #include <sys/socket.h>
 #include <sys/un.h>
 #include <sys/stat.h>
+
+#include "spci.h"
 
 /* ---------- values ---------- */
 
@@ -266,7 +269,7 @@ static int frame_write(int fd, uint8_t tag, uint32_t id, const char *payload, ui
     if (len && write_all(fd, payload, len) < 0) return -1;
     return 0;
 }
-static int frame_read(int fd, uint8_t *tag, uint32_t *id, char **payload, uint32_t *len) {
+int frame_read(int fd, uint8_t *tag, uint32_t *id, char **payload, uint32_t *len) {
     uint8_t hdr[9];
     if (read_n(fd, hdr, 9) < 0) return -1;
     *tag = hdr[0];
@@ -285,20 +288,17 @@ static int frame_read(int fd, uint8_t *tag, uint32_t *id, char **payload, uint32
 
 /* ---------- mesh state ---------- */
 
-static char  *my_name = NULL;
-static char  *bus_dir = NULL;
-static int    listen_fd = -1;
+char  *my_name = NULL;
+char  *bus_dir = NULL;
+int    listen_fd = -1;
 
-typedef struct {
-    char *name;    /* peer name, may be NULL until HELLO received */
-    int   fd;
-    int   outgoing; /* 1 = we connected to them; 0 = they connected to us */
-} Peer;
+/* Peer typedef now in spci.h */
 
-static Peer  *peers = NULL;
-static size_t peers_len = 0, peers_cap = 0;
+Peer  *peers = NULL;
+size_t peers_len = 0;
+static size_t peers_cap = 0;
 
-static Peer *peer_add(int fd, const char *name, int outgoing) {
+Peer *peer_add(int fd, const char *name, int outgoing) {
     if (peers_len == peers_cap) {
         peers_cap = peers_cap ? peers_cap * 2 : 8;
         peers = realloc(peers, peers_cap * sizeof(Peer));
@@ -306,7 +306,7 @@ static Peer *peer_add(int fd, const char *name, int outgoing) {
     peers[peers_len] = (Peer){ name ? strdup(name) : NULL, fd, outgoing };
     return &peers[peers_len++];
 }
-static void peer_drop(size_t i) {
+void peer_drop(size_t i) {
     if (peers[i].fd >= 0) close(peers[i].fd);
     free(peers[i].name);
     peers[i] = peers[peers_len - 1];
@@ -377,10 +377,10 @@ static void pending_remove(uint32_t id) {
 }
 
 /* forward decl: process one frame's payload through the interpreter */
-static void feed(const char *src);
+/* feed declared in spci.h */
 
 /* dispatch a frame we just received */
-static void on_frame(Peer *p, uint8_t tag, uint32_t id, char *payload, uint32_t len) {
+void on_frame(Peer *p, uint8_t tag, uint32_t id, char *payload, uint32_t len) {
     switch (tag) {
         case TAG_HELLO:
             free(p->name);
@@ -404,7 +404,7 @@ static void on_frame(Peer *p, uint8_t tag, uint32_t id, char *payload, uint32_t 
 }
 
 /* pump readable peer fds + accept new connections; non-blocking poll w/ timeout_ms */
-static int mesh_poll(int timeout_ms) {
+int mesh_poll(int timeout_ms) {
     if (listen_fd < 0) return 0;
     struct pollfd pfds[64];
     size_t n = 0;
@@ -440,7 +440,7 @@ static int mesh_poll(int timeout_ms) {
 }
 
 /* set up the listen socket at $BUS/$NAME.sock */
-static int mesh_listen(void) {
+int mesh_listen(void) {
     mkdir(bus_dir, 0700);
     char path[104];
     snprintf(path, sizeof path, "%s/%s.sock", bus_dir, my_name);
@@ -689,6 +689,27 @@ static void eval_word(const char *w) {
         return;
     }
 
+    /* slurp: read one line from stdin (sans trailing newline), push as string */
+    if (!strcmp(w, "slurp")) {
+        char line[4096];
+        if (fgets(line, sizeof line, stdin)) {
+            size_t n = strlen(line);
+            if (n && line[n-1] == '\n') line[--n] = 0;
+            push(v_str(line));
+        } else {
+            push(v_str(""));
+        }
+        return;
+    }
+    /* eval: pop a string, feed it to the interpreter */
+    if (!strcmp(w, "eval")) {
+        Value *t = pop();
+        if (t && t->type == V_STR) feed(t->as.str);
+        else fprintf(stderr, "eval: expected string\n");
+        v_unref(t);
+        return;
+    }
+
     /* . print */
     if (!strcmp(w,".")) {
         Value *t = pop(); pretty(t); printf("\n"); v_unref(t); return;
@@ -818,7 +839,7 @@ static void eval(Value *t) {
 
 /* a parsed top-level word like ":s" arrives as two tokens (":" then "s")
  * because of our single-char op rule. Fuse them at the source feeder. */
-static void feed(const char *src) {
+void feed(const char *src) {
     Lex L = { src, 0, strlen(src) };
     for (;;) {
         skip_ws(&L);
@@ -847,93 +868,3 @@ static void feed(const char *src) {
     }
 }
 
-/* ---------- driver ---------- */
-
-static char *slurp_file(const char *path) {
-    FILE *f = fopen(path, "rb");
-    if (!f) { perror(path); exit(1); }
-    fseek(f, 0, SEEK_END);
-    long n = ftell(f);
-    fseek(f, 0, SEEK_SET);
-    char *buf = malloc(n + 1);
-    fread(buf, 1, n, f);
-    buf[n] = 0;
-    fclose(f);
-    return buf;
-}
-
-int main(int argc, char **argv) {
-    setvbuf(stdout, NULL, _IOLBF, 0);
-    setvbuf(stderr, NULL, _IOLBF, 0);
-    const char *file_arg = NULL;
-    for (int i = 1; i < argc; i++) {
-        if (!strcmp(argv[i], "--name") && i + 1 < argc) { my_name = argv[++i]; }
-        else if (!strcmp(argv[i], "--bus") && i + 1 < argc) { bus_dir = argv[++i]; }
-        else if (argv[i][0] != '-') { file_arg = argv[i]; }
-        else { fprintf(stderr, "unknown arg: %s\n", argv[i]); return 1; }
-    }
-    if ((my_name && !bus_dir) || (!my_name && bus_dir)) {
-        fprintf(stderr, "--name and --bus must be used together\n"); return 1;
-    }
-
-    if (my_name) {
-        if (mesh_listen() < 0) return 1;
-    }
-
-    if (file_arg) {
-        char *src = slurp_file(file_arg);
-        feed(src);
-        free(src);
-        if (!my_name) return 0;
-    }
-
-    if (my_name) {
-        int is_tty = isatty(STDIN_FILENO);
-        fprintf(stderr, "[%s] ready%s\n", my_name, is_tty ? " — REPL on stdin" : "");
-        if (is_tty) { printf("> "); fflush(stdout); }
-        for (;;) {
-            /* poll listen, peers, AND stdin */
-            struct pollfd pfds[64];
-            size_t n = 0;
-            pfds[n].fd = STDIN_FILENO; pfds[n].events = POLLIN; n++;
-            pfds[n].fd = listen_fd;    pfds[n].events = POLLIN; n++;
-            for (size_t i = 0; i < peers_len && n < 64; i++) {
-                pfds[n].fd = peers[i].fd; pfds[n].events = POLLIN; n++;
-            }
-            if (poll(pfds, n, 1000) <= 0) continue;
-
-            if (pfds[0].revents & POLLIN) {
-                char line[4096];
-                if (!fgets(line, sizeof line, stdin)) return 0;
-                feed(line);
-                if (is_tty) { printf("> "); fflush(stdout); }
-            }
-            if (pfds[1].revents & POLLIN) {
-                int cfd = accept(listen_fd, NULL, NULL);
-                if (cfd >= 0) peer_add(cfd, NULL, 0);
-            }
-            for (size_t pi = 2; pi < n; pi++) {
-                if (!(pfds[pi].revents & (POLLIN|POLLHUP|POLLERR))) continue;
-                size_t found = (size_t)-1;
-                for (size_t j = 0; j < peers_len; j++)
-                    if (peers[j].fd == pfds[pi].fd) { found = j; break; }
-                if (found == (size_t)-1) continue;
-                uint8_t tag; uint32_t id, len; char *payload = NULL;
-                if (frame_read(peers[found].fd, &tag, &id, &payload, &len) < 0) {
-                    peer_drop(found); continue;
-                }
-                on_frame(&peers[found], tag, id, payload, len);
-            }
-        }
-    }
-
-    /* REPL (no mesh) */
-    char line[4096];
-    printf("spci · spacelang in C · :bye to quit\n");
-    for (;;) {
-        printf("> "); fflush(stdout);
-        if (!fgets(line, sizeof line, stdin)) { printf("\n"); break; }
-        feed(line);
-    }
-    return 0;
-}
