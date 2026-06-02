@@ -34,9 +34,11 @@ int main(int argc, char **argv) {
     setvbuf(stdout, NULL, _IOLBF, 0);
     setvbuf(stderr, NULL, _IOLBF, 0);
     const char *file_arg = NULL;
+    int serve = 0;
     for (int i = 1; i < argc; i++) {
         if (!strcmp(argv[i], "--name") && i + 1 < argc) { my_name = argv[++i]; }
         else if (!strcmp(argv[i], "--bus") && i + 1 < argc) { bus_dir = argv[++i]; }
+        else if (!strcmp(argv[i], "--serve")) { serve = 1; }
         else if (argv[i][0] != '-') { file_arg = argv[i]; }
         else { fprintf(stderr, "unknown arg: %s\n", argv[i]); return 1; }
     }
@@ -53,6 +55,10 @@ int main(int argc, char **argv) {
         feed(src);
         free(src);
         if (!my_name) return 0;
+        if (!serve) {
+            fprintf(stderr, "[%s] done (use --serve to keep alive)\n", my_name);
+            return 0;
+        }
     }
 
     if (my_name) {

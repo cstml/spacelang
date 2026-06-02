@@ -107,11 +107,14 @@ step ! step ! step !       { read & execute 3 lines from stdin }
 ./c/spci                      # REPL
 ./c/spci program.sp           # batch mode (run file, exit)
 ./c/spci --name A --bus /tmp/spacelang             # mesh node, REPL on stdin
-./c/spci --name A --bus /tmp/spacelang program.sp  # mesh node, run file then serve
+./c/spci --name A --bus /tmp/spacelang program.sp  # mesh node, run file, exit
+./c/spci --name A --bus /tmp/spacelang --serve program.sp  # run file, stay alive
 ```
 
 In mesh mode, `spci` binds `$BUS/<name>.sock` and lazily connects to peers
-at `$BUS/<peer>.sock` on first send. See `../docs/inter-machine.html` for
+at `$BUS/<peer>.sock` on first send. Without `--serve`, the process exits
+after the script finishes (same as compiled binaries). With `--serve`, it
+keeps serving mesh requests. See `../docs/inter-machine.html` for
 protocol details.
 
 ## Compiling with `spcc`
@@ -209,8 +212,8 @@ and sets `SPACELANG_NAME`/`SPACELANG_BUS` in the child's environment.
 ### Examples
 
 ```sh
-# Two workers defined by source files
-./c/spco -v --bus /tmp/spacelang A='./c/spci a.sp' B='./c/spci b.sp'
+# Two workers defined by source files (need --serve to stay alive)
+./c/spco -v --bus /tmp/spacelang A='./c/spci --serve a.sp' B='./c/spci --serve b.sp'
 
 # Using compiled binaries with --serve
 ./c/spco --bus /tmp/spacelang \
@@ -252,7 +255,7 @@ Without `-v`, only essential messages (startup, errors, shutdown) are shown.
 
 # Terminal 2: send to W — spco spawns it on demand
 ./c/spci --name DRIVER --bus /tmp/spacelang
-> [ 42 ] [W] $? 2000 .
+> 42 [W] 2000 $? .
 t
 ```
 
