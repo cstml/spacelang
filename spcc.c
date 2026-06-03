@@ -367,6 +367,7 @@ int main(int argc, char **argv) {
         else if (!strcmp(argv[i], "--as") && i+1 < argc) bake_name = argv[++i];
         else if (!strcmp(argv[i], "-o") && i+1 < argc) output = argv[++i];
         else if (!strcmp(argv[i], "-h") || !strcmp(argv[i], "--help")) { usage(); return 0; }
+        else if (!strcmp(argv[i], "--version") || !strcmp(argv[i], "-V")) { printf("spcc %s\n", SPC_VERSION); return 0; }
         else if (argv[i][0] == '-') {
             fprintf(stderr, "spcc: unknown flag: %s\n", argv[i]);
             usage(); return 1;

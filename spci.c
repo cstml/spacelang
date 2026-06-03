@@ -79,7 +79,10 @@ int main(int argc, char **argv) {
     int dd = argc;
     for (int i = 1; i < argc; i++) if (!strcmp(argv[i], "--")) { dd = i; break; }
     for (int i = 1; i < dd; i++) {
-        if (!strcmp(argv[i], "--name") && i + 1 < dd) { my_name = argv[++i]; }
+        if (!strcmp(argv[i], "--version") || !strcmp(argv[i], "-V")) {
+            printf("spci %s\n", SPC_VERSION); return 0;
+        }
+        else if (!strcmp(argv[i], "--name") && i + 1 < dd) { my_name = argv[++i]; }
         else if (!strcmp(argv[i], "--bus") && i + 1 < dd) { bus_dir = argv[++i]; }
         else if (!strcmp(argv[i], "--serve")) { serve = 1; }
         else if (argv[i][0] != '-') {
