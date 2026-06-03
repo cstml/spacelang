@@ -5,7 +5,7 @@ Written in C. Ships as three binaries plus a runtime library:
 
 - **`spci`** — interactive interpreter (REPL + file mode + mesh node).
 - **`spcc`** — compiler: turns a `.sp` file into a standalone native binary.
-- **`spco`** — orchestrator: name-resolution broker, lazy-spawns peers on demand.
+- **`spco`** — discovery broker: answers LOOKUP by checking `$BUS/<name>.sock` on disk.
 - **`libspci.a`** + **`spci.h`** — the runtime, linked into programs `spcc` produces.
 
 ## Build
@@ -27,7 +27,7 @@ Requires a C compiler (`cc`) and `ar`. Tests require Python 3.
 | `spci.c`       | Definitions: values, stack, dict, parser, builtins, frame I/O, mesh polling.  |
 | `spci_main.c`  | Driver for the interactive `spci` binary: argv parsing + REPL/event loop.     |
 | `spcc.c`       | The compiler: emits a small `.c` and links it against `libspci.a`.            |
-| `spco.c`       | The orchestrator: LOOKUP/ADDR broker, lazy-spawns children, crash backoff.    |
+| `spco.c`       | Discovery broker: answers LOOKUP by checking the filesystem for .sock files.  |
 | `test_harness.py` | Test suite: unit, compile, property, and mesh integration tests.            |
 | `libspci.a`    | Archive of `spci.o`; what `spcc`-produced binaries link against.              |
 
@@ -208,73 +208,38 @@ Four test classes:
 | `TestProperty`  | 200 random balanced programs → no segfaults       |
 | `TestMesh`      | spco + spci nodes over real Unix sockets          |
 
-## Mesh orchestration with `spco`
+## Mesh discovery with `spco`
 
-`spco` is a name-resolution broker. It listens on `$BUS/spco.sock` and
-handles LOOKUP requests from peers that can't find a direct socket.
+`spco` is a stateless discovery broker. It answers LOOKUP by checking
+whether `$BUS/<name>.sock` exists on the filesystem. No spawning, no
+lifecycle, no child management — just filesystem checks.
 
 ### How it works
 
 1. A sender tries `$BUS/<peer>.sock` directly.
 2. If that fails, it sends `LOOKUP "peer"` to `spco`.
-3. `spco` spawns the peer (if not already running) and returns `ADDR /path/to/peer.sock`.
+3. `spco` does `stat($BUS/peer.sock)` and returns `ADDR` if it exists.
 4. The sender connects directly to the peer — `spco` stays out of the data path.
 
 ### CLI
 
 ```sh
-spco [-v|--verbose] [--bus DIR] NAME=CMD ...
+./spco [--bus DIR]
 ```
 
-Each `NAME=CMD` declares a peer: `NAME` is the mesh identity, `CMD` is the
-command to spawn (split on whitespace). `spco` appends `--name NAME --bus DIR`
-and sets `SPACELANG_NAME`/`SPACELANG_BUS` in the child's environment.
-
-### Examples
-
-```sh
-# Two workers defined by source files (need --serve to stay alive)
-./spco -v --bus /tmp/spacelang A='./spci --serve a.sp' B='./spci --serve b.sp'
-
-# Using compiled binaries with --serve
-./spco --bus /tmp/spacelang \
-  A='./a_compiled --serve' \
-  B='./b_compiled --serve'
-```
-
-### Child lifecycle
-
-- **Lazy spawn** — children start on first LOOKUP, not at boot.
-- **Crash backoff** — on exit, restart on next LOOKUP after exponential
-  backoff (100ms → 200ms → 400ms … capped at 5s).
-- **Graceful shutdown** — on SIGINT/SIGTERM, `spco` sends SIGTERM to all
-  children, waits 100ms, then unlinks sockets and exits.
-
-### Verbose mode
-
-`-v` or `--verbose` prints a per-request trace:
-
-```
-[spco] listening on /tmp/spacelang/spco.sock, 2 entries
-[spco]   A → ./spci
-[spco]   B → ./spci
-[spco] client connected
-[spco] LOOKUP "A"
-[spco] lazy-spawning A
-[spco] spawn A pid=12345 cmd=./spci
-[spco] A bound at /tmp/spacelang/A.sock
-[spco] → ADDR /tmp/spacelang/A.sock
-```
-
-Without `-v`, only essential messages (startup, errors, shutdown) are shown.
+No other arguments. Peers are started independently (by hand, systemd, docker,
+etc.) and bind their sockets under the bus directory.
 
 ### End-to-end example
 
 ```sh
-# Terminal 1: start the orchestrator
-./spco -v --bus /tmp/spacelang W='./spci --bus /tmp/spacelang worker.sp'
+# Terminal 1: start the discovery broker
+./spco --bus /tmp/spacelang
 
-# Terminal 2: send to W — spco spawns it on demand
+# Terminal 2: start worker W (could be on another machine via socat forwarding)
+./spci --name W --bus /tmp/spacelang --serve worker.sp
+
+# Terminal 3: driver sends to W
 ./spci --name DRIVER --bus /tmp/spacelang
 > 42 [W] 2000 $? .
 t

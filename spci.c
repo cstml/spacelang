@@ -7,6 +7,10 @@
  *   dup swap drop if
  *   @ (bind)   ! (eval)   . (print)   , (format)   ~ (describe)
  *   slurp (read line from stdin → string)   eval (pop string → feed)
+ *   cat (string concat)   :sh (shell out)   :sleep (ms)   :exists (peer?)
+ *   :bus (push current bus dir)   :require (load + feed file)   rot
+ *   :log (pop string → stderr line)   :alive (real connect test)
+ *   name>str ([X] → "X")   str>name ("X" → [X])
  *   :s (print stack)   :bye (exit)   { comments }
  *
  * Inter-machine (with --name X --bus DIR):
@@ -36,6 +40,7 @@
 #include <poll.h>
 #include <time.h>
 #include <sys/socket.h>
+#include <signal.h>
 #include <sys/un.h>
 #include <sys/stat.h>
 
@@ -219,7 +224,16 @@ static void format_value(SBuf *s, Value *v) {
     switch (v->type) {
         case V_NUM:  sb_printf(s, "%ld", v->as.num); break;
         case V_BOOL: sb_puts(s, v->as.boolean ? "true" : "false"); break;
-        case V_STR:  sb_putc(s, '"'); sb_puts(s, v->as.str); sb_putc(s, '"'); break;
+        case V_STR: {
+            /* Pick a quote the content doesn't contain so the formatted
+             * form round-trips through the parser (which accepts both
+             * "..." and '...'). */
+            int has_d = strchr(v->as.str, '"')  != NULL;
+            int has_s = strchr(v->as.str, '\'') != NULL;
+            char q = (has_d && !has_s) ? '\'' : '"';
+            sb_putc(s, q); sb_puts(s, v->as.str); sb_putc(s, q);
+            break;
+        }
         case V_WORD: sb_puts(s, v->as.word); break;
         case V_THUNK:
             sb_putc(s, '[');
@@ -328,33 +342,16 @@ static int connect_to_path(const char *path, int max_tries) {
     return fd;
 }
 
-/* Ask spco at $BUS/spco.sock to resolve `name`. Returns connected fd to
- * the resolved socket, or -1 if spco is absent / refuses / spawn fails. */
-static int spco_lookup_and_connect(const char *name) {
-    char spath[104];
-    snprintf(spath, sizeof spath, "%s/spco.sock", bus_dir);
-    int sfd = connect_to_path(spath, 0);
-    if (sfd < 0) return -1;
-    if (frame_write(sfd, TAG_LOOKUP, 0, name, strlen(name)) < 0) {
-        close(sfd); return -1;
-    }
-    uint8_t tag; uint32_t id, len; char *payload = NULL;
-    if (frame_read(sfd, &tag, &id, &payload, &len) < 0) { close(sfd); return -1; }
-    close(sfd);
-    if (tag != TAG_ADDR || !payload) { free(payload); return -1; }
-    int dfd = connect_to_path(payload, 20);
-    free(payload);
-    return dfd;
-}
+/* Ask spco at $BUS/spco.sock to resolve `name`. spco just checks
+ * whether $BUS/<name>.sock exists on disk. Returns connected fd or -1. */
 
-/* connect to /tmp/spacelang/<name>.sock, send HELLO, return new peer or NULL.
- * If direct connect fails, fall back to asking spco at $BUS/spco.sock. */
+/* connect to $BUS/<name>.sock, send HELLO, return new peer or NULL.
+ * Spawn-on-demand lives in spacelang (see with-spco.sp / via-spco). */
 static Peer *peer_connect(const char *name) {
     if (!bus_dir || !my_name) return NULL;
     char path[104];
     snprintf(path, sizeof path, "%s/%s.sock", bus_dir, name);
-    int fd = connect_to_path(path, 20);  /* try direct first */
-    if (fd < 0) fd = spco_lookup_and_connect(name);
+    int fd = connect_to_path(path, 20);
     if (fd < 0) return NULL;
     if (frame_write(fd, TAG_HELLO, 0, my_name, strlen(my_name)) < 0) {
         close(fd); return NULL;
@@ -407,6 +404,8 @@ void on_frame(Peer *p, uint8_t tag, uint32_t id, char *payload, uint32_t len) {
         case TAG_PUSH:
         case TAG_EVAL:
             if (payload) feed(payload);
+            /* trailing ! activates the value the payload pushed:
+             * thunk → run, string → feed-as-source */
             if (tag == TAG_EVAL) feed("!");
             break;
         case TAG_SYNC:
@@ -457,21 +456,39 @@ int mesh_poll(int timeout_ms) {
     return r;
 }
 
-/* set up the listen socket at $BUS/$NAME.sock */
+/* Path we bound to; remembered so atexit/signal handlers can unlink it. */
+static char mesh_sock_path[108] = {0};
+
+static void mesh_cleanup_socket(void) {
+    if (mesh_sock_path[0]) unlink(mesh_sock_path);
+}
+static void mesh_signal_exit(int sig) {
+    (void)sig;
+    mesh_cleanup_socket();
+    _exit(0);
+}
+
+/* set up the listen socket at $BUS/$NAME.sock, with crash-safe cleanup */
 int mesh_listen(void) {
     mkdir(bus_dir, 0700);
-    char path[104];
-    snprintf(path, sizeof path, "%s/%s.sock", bus_dir, my_name);
-    unlink(path);  /* clean stale */
+    snprintf(mesh_sock_path, sizeof mesh_sock_path, "%s/%s.sock", bus_dir, my_name);
+    unlink(mesh_sock_path);  /* clean stale from prior run */
     int fd = socket(AF_UNIX, SOCK_STREAM, 0);
     if (fd < 0) { perror("socket"); return -1; }
     struct sockaddr_un addr = {0};
     addr.sun_family = AF_UNIX;
-    snprintf(addr.sun_path, sizeof addr.sun_path, "%s", path);
+    snprintf(addr.sun_path, sizeof addr.sun_path, "%s", mesh_sock_path);
     if (bind(fd, (struct sockaddr*)&addr, sizeof addr) < 0) { perror("bind"); close(fd); return -1; }
     if (listen(fd, 16) < 0) { perror("listen"); close(fd); return -1; }
     listen_fd = fd;
-    fprintf(stderr, "[%s] listening on %s\n", my_name, path);
+    /* Install cleanup so the socket file goes away on graceful exit
+     * or on common kill signals. SIGKILL/segfaults still leave a stale
+     * file — that's why callers use :alive (real connect test). */
+    atexit(mesh_cleanup_socket);
+    signal(SIGINT,  mesh_signal_exit);
+    signal(SIGTERM, mesh_signal_exit);
+    signal(SIGHUP,  mesh_signal_exit);
+    fprintf(stderr, "[%s] listening on %s\n", my_name, mesh_sock_path);
     return 0;
 }
 
@@ -558,7 +575,7 @@ static Value *parse_term(Lex *L) {
         size_t start = L->i;
         L->i++;
         while (L->i < L->n &&
-               (isalnum((unsigned char)L->src[L->i]) || L->src[L->i] == '_'))
+               (isalnum((unsigned char)L->src[L->i]) || L->src[L->i] == '_' || L->src[L->i] == '-' || L->src[L->i] == '/' || L->src[L->i] == '>' || L->src[L->i] == '$' || L->src[L->i] == '?' || L->src[L->i] == '!'))
             L->i++;
         char *buf = malloc(L->i - start + 1);
         memcpy(buf, L->src + start, L->i - start);
@@ -579,7 +596,7 @@ static Value *parse_term(Lex *L) {
     if (isalpha((unsigned char)c) || c == '_') {
         size_t start = L->i;
         while (L->i < L->n &&
-               (isalnum((unsigned char)L->src[L->i]) || L->src[L->i] == '_'))
+               (isalnum((unsigned char)L->src[L->i]) || L->src[L->i] == '_' || L->src[L->i] == '-' || L->src[L->i] == '/' || L->src[L->i] == '>' || L->src[L->i] == '$' || L->src[L->i] == '?' || L->src[L->i] == '!'))
             L->i++;
         char *buf = malloc(L->i - start + 1);
         memcpy(buf, L->src + start, L->i - start);
@@ -645,16 +662,25 @@ static int  le(long a,long b){return a<=b;}
 static int  ge(long a,long b){return a>=b;}
 static int  eq(long a,long b){return a==b;}
 
-/* a "binding form" is a thunk of length 1 whose single element is a word —
- * spacelang's [foo] @ idiom. Return the word name or NULL. */
+/* a "binding form" identifies a name. Two shapes accepted:
+ *   [foo]   — a thunk of length 1 whose single element is a word
+ *   "foo"   — a plain string
+ * Returns the name or NULL. */
 static const char *binding_name(Value *v) {
-    if (!v || v->type != V_THUNK || v->as.thunk.len != 1) return NULL;
-    Value *inner = v->as.thunk.items[0];
-    if (!inner || inner->type != V_WORD) return NULL;
-    return inner->as.word;
+    if (!v) return NULL;
+    if (v->type == V_STR) return v->as.str;
+    if (v->type == V_THUNK && v->as.thunk.len == 1) {
+        Value *inner = v->as.thunk.items[0];
+        if (inner && inner->type == V_WORD) return inner->as.word;
+    }
+    return NULL;
 }
 
 static void eval_word(const char *w) {
+    /* keywords */
+    if (!strcmp(w, ":s"))   { print_stack(); return; }
+    if (!strcmp(w, ":bye")) { exit(0); }
+
     /* arithmetic / comparison */
     if (!strcmp(w,"+")) { bin_num(add); return; }
     if (!strcmp(w,"-")) { bin_num(sub); return; }
@@ -670,6 +696,11 @@ static void eval_word(const char *w) {
     if (!strcmp(w,"dup"))  { Value *x = pop(); push(x); push(v_ref(x)); return; }
     if (!strcmp(w,"swap")) { Value *a = pop(), *b = pop(); push(a); push(b); return; }
     if (!strcmp(w,"drop")) { v_unref(pop()); return; }
+    if (!strcmp(w,"rot"))  {
+        /* rot: a b c → b c a */
+        Value *c = pop(), *b = pop(), *a = pop();
+        push(b); push(c); push(a); return;
+    }
 
     /* if: pops cond, then-branch, else-branch (top to bottom) */
     if (!strcmp(w,"if")) {
@@ -696,14 +727,12 @@ static void eval_word(const char *w) {
         return;
     }
 
-    /* ! eval: pop top, evaluate it */
+    /* ! eval: pop top, evaluate it (thunk → run body; string → feed source) */
     if (!strcmp(w,"!")) {
         Value *t = pop();
-        if (t && t->type == V_THUNK) {
-            run_thunk(t); v_unref(t);
-        } else {
-            eval(t);
-        }
+        if (t && t->type == V_THUNK)      { run_thunk(t); v_unref(t); }
+        else if (t && t->type == V_STR)   { feed(t->as.str); v_unref(t); }
+        else                              { eval(t); }
         return;
     }
 
@@ -725,6 +754,148 @@ static void eval_word(const char *w) {
         if (t && t->type == V_STR) feed(t->as.str);
         else fprintf(stderr, "eval: expected string\n");
         v_unref(t);
+        return;
+    }
+
+    /* cat: pop two strings, push their concatenation */
+    if (!strcmp(w, "cat")) {
+        Value *b = pop(), *a = pop();
+        if (!a || !b || a->type != V_STR || b->type != V_STR) {
+            fprintf(stderr, "cat: expected two strings\n");
+            v_unref(a); v_unref(b); push(v_str("")); return;
+        }
+        size_t la = strlen(a->as.str), lb = strlen(b->as.str);
+        char *buf = malloc(la + lb + 1);
+        memcpy(buf, a->as.str, la);
+        memcpy(buf + la, b->as.str, lb);
+        buf[la + lb] = 0;
+        Value *r = v_str(buf);
+        free(buf); v_unref(a); v_unref(b);
+        push(r); return;
+    }
+
+    /* :sh — pop a string, run it via /bin/sh -c, push exit status */
+    if (!strcmp(w, ":sh")) {
+        Value *t = pop();
+        int rc = -1;
+        if (t && t->type == V_STR) rc = system(t->as.str);
+        else fprintf(stderr, ":sh: expected string\n");
+        v_unref(t);
+        push(v_num(rc));
+        return;
+    }
+
+    /* :sleep — pop a number (milliseconds), sleep that long */
+    if (!strcmp(w, ":sleep")) {
+        Value *t = pop();
+        if (t && t->type == V_NUM) {
+            long ms = t->as.num;
+            if (ms > 0) {
+                struct timespec ts = { ms / 1000, (ms % 1000) * 1000000L };
+                nanosleep(&ts, NULL);
+            }
+        } else fprintf(stderr, ":sleep: expected number\n");
+        v_unref(t);
+        return;
+    }
+
+    /* :require — pop a path string, load and evaluate that file */
+    if (!strcmp(w, ":require")) {
+        Value *t = pop();
+        if (t && t->type == V_STR) {
+            FILE *f = fopen(t->as.str, "rb");
+            if (f) {
+                fseek(f, 0, SEEK_END); long n = ftell(f); fseek(f, 0, SEEK_SET);
+                char *buf = malloc(n + 1);
+                if (fread(buf, 1, n, f) != (size_t)n) { /* short read tolerated */ }
+                buf[n] = 0;
+                fclose(f);
+                feed(buf);
+                free(buf);
+            } else {
+                fprintf(stderr, ":require: cannot open '%s'\n", t->as.str);
+            }
+        } else fprintf(stderr, ":require: expected string\n");
+        v_unref(t);
+        return;
+    }
+
+    /* name>str — pop a binder form ([X] or "X"), push the name as a string */
+    if (!strcmp(w, "name>str")) {
+        Value *v = pop();
+        const char *n = binding_name(v);
+        if (n) push(v_str(n));
+        else { fprintf(stderr, "name>str: expected [name] or string\n"); push(v_str("")); }
+        v_unref(v);
+        return;
+    }
+
+    /* str>name — pop a string, push a [name] thunk-of-word */
+    if (!strcmp(w, "str>name")) {
+        Value *v = pop();
+        if (v && v->type == V_STR) {
+            Value *t = v_thunk();
+            thunk_push(t, v_word(v->as.str));
+            push(t);
+        } else {
+            fprintf(stderr, "str>name: expected string\n");
+            push(v_thunk());
+        }
+        v_unref(v);
+        return;
+    }
+
+    /* :log — pop a string, write it raw to stderr with newline */
+    if (!strcmp(w, ":log")) {
+        Value *t = pop();
+        if (t && t->type == V_STR) { fputs(t->as.str, stderr); fputc('\n', stderr); }
+        else fprintf(stderr, ":log: expected string\n");
+        v_unref(t);
+        return;
+    }
+
+    /* :bus — push the current bus_dir as a string (or "" if unset) */
+    if (!strcmp(w, ":bus")) {
+        push(v_str(bus_dir ? bus_dir : ""));
+        return;
+    }
+
+    /* :alive — pop a name (string or [name]), push t iff something is listening
+     * on $BUS/name.sock right now (real connect test, not just fs check). */
+    if (!strcmp(w, ":alive")) {
+        Value *v = pop();
+        const char *name = binding_name(v);
+        int alive = 0;
+        if (name && bus_dir) {
+            char path[108];
+            snprintf(path, sizeof path, "%s/%s.sock", bus_dir, name);
+            int fd = socket(AF_UNIX, SOCK_STREAM, 0);
+            if (fd >= 0) {
+                struct sockaddr_un addr = {0};
+                addr.sun_family = AF_UNIX;
+                snprintf(addr.sun_path, sizeof addr.sun_path, "%s", path);
+                alive = (connect(fd, (struct sockaddr*)&addr, sizeof addr) == 0);
+                close(fd);
+            }
+        }
+        v_unref(v);
+        push(alive ? v_bool(1) : v_num(0));
+        return;
+    }
+
+    /* :exists — pop a name (string or [name]), push t if $BUS/name.sock exists */
+    if (!strcmp(w, ":exists")) {
+        Value *v = pop();
+        const char *name = binding_name(v);
+        int present = 0;
+        if (name && bus_dir) {
+            char path[108];
+            snprintf(path, sizeof path, "%s/%s.sock", bus_dir, name);
+            struct stat st;
+            present = (stat(path, &st) == 0 && S_ISSOCK(st.st_mode));
+        }
+        v_unref(v);
+        push(present ? v_bool(1) : v_num(0));
         return;
     }
 
@@ -820,9 +991,15 @@ static void eval_word(const char *w) {
     if (!strcmp(w,"false")) { push(v_num(0));  return; }
     if (!strcmp(w,"nil"))   { push(v_num(0));  return; }
 
-    /* otherwise: look up and push the binding */
+    /* otherwise: look up the binding. Auto-eval rule: if the bound value
+     * is a thunk, run it; any other value just gets pushed. To push a
+     * raw thunk as data, bind it double-wrapped: [ [body] ] [name] @  */
     Value *bound = word_get(w);
-    if (bound) { push(v_clone(bound)); return; }
+    if (bound) {
+        if (bound->type == V_THUNK) run_thunk(bound);
+        else                         push(v_clone(bound));
+        return;
+    }
 
     fprintf(stderr, "unknown word: %s\n", w);
 }
@@ -837,16 +1014,7 @@ static void eval(Value *t) {
             push(t);
             return;
         case V_WORD: {
-            /* handle :foo keyword form: parser gives us ":" then word.
-             * Easier: if word starts with ':', treat the rest as a command. */
-            char *w = t->as.word;
-            if (w[0] == ':') {
-                if (!strcmp(w, ":s"))   { print_stack(); v_unref(t); return; }
-                if (!strcmp(w, ":bye")) { v_unref(t); exit(0); }
-                /* unknown keyword: push as word for now */
-                push(t); return;
-            }
-            char *copy = strdup(w);
+            char *copy = strdup(t->as.word);
             v_unref(t);
             eval_word(copy);
             free(copy);
@@ -870,7 +1038,7 @@ void feed(const char *src) {
                 size_t start = L.i;
                 L.i = j;
                 while (L.i < L.n &&
-                       (isalnum((unsigned char)L.src[L.i]) || L.src[L.i] == '_'))
+                       (isalnum((unsigned char)L.src[L.i]) || L.src[L.i] == '_' || L.src[L.i] == '-' || L.src[L.i] == '/' || L.src[L.i] == '>' || L.src[L.i] == '$' || L.src[L.i] == '?' || L.src[L.i] == '!'))
                     L.i++;
                 char *buf = malloc(L.i - start + 1);
                 memcpy(buf, L.src + start, L.i - start);

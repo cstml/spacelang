@@ -4,3 +4,4 @@ spcc
 spco
 spci.o
 libspci.a
+__pycache__/

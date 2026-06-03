@@ -14,8 +14,8 @@ spci: spci.o spci_main.c spci.h
 spcc: spcc.c
 	cc -O2 -Wall -Wextra -o $@ spcc.c
 
-spco: spco.c spci.h libspci.a
-	cc -O2 -Wall -Wextra -o $@ spco.c libspci.a
+spco: spco.sp spcc libspci.a spci.h
+	./spcc --as spco spco.sp -o $@
 
 clean:
 	rm -f spci spcc spco spci.o libspci.a

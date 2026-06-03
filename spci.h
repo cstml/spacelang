@@ -44,9 +44,6 @@ void  peer_drop(size_t i);
 #define TAG_EVAL   0x03
 #define TAG_SYNC   0x04
 #define TAG_ACK    0x05
-#define TAG_LOOKUP 0x06   /* sender → spco: "where is <name>?" payload = name */
-#define TAG_ADDR   0x07   /* spco → sender: "here it is" payload = socket path */
-
 int  frame_read(int fd, uint8_t *tag, uint32_t *id,
                 char **payload, uint32_t *len);
 int  frame_write(int fd, uint8_t tag, uint32_t id,
