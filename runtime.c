@@ -1006,15 +1006,20 @@ static void eval_word(const char *w) {
 
     /* :require — pop a path string, load and evaluate that file.
      * Falls back to spc_source_dir for non-absolute paths so a script
-     * can require sibling files (e.g. "dep.sp") without depending on CWD. */
+     * can require sibling files (e.g. "dep.sp") without depending on CWD.
+     * Updates spc_source_dir to the loaded file's dir during the inner
+     * feed so nested requires resolve relative to *their* file. */
     if (!strcmp(w, ":require")) {
         Value *t = pop();
         if (t && t->type == V_STR) {
+            char resolved[4096];
+            resolved[0] = 0;
             FILE *f = fopen(t->as.str, "rb");
+            if (f) snprintf(resolved, sizeof resolved, "%s", t->as.str);
             if (!f && spc_source_dir && t->as.str[0] != '/') {
-                char full[4096];
-                snprintf(full, sizeof full, "%s/%s", spc_source_dir, t->as.str);
-                f = fopen(full, "rb");
+                snprintf(resolved, sizeof resolved, "%s/%s",
+                         spc_source_dir, t->as.str);
+                f = fopen(resolved, "rb");
             }
             if (f) {
                 fseek(f, 0, SEEK_END); long n = ftell(f); fseek(f, 0, SEEK_SET);
@@ -1022,7 +1027,13 @@ static void eval_word(const char *w) {
                 if (fread(buf, 1, n, f) != (size_t)n) { /* short read tolerated */ }
                 buf[n] = 0;
                 fclose(f);
+                char *dir_dup = strdup(resolved);
+                char *slash = strrchr(dir_dup, '/');
+                const char *prev = spc_source_dir;
+                if (slash) { *slash = 0; spc_source_dir = dir_dup; }
                 feed(buf);
+                spc_source_dir = prev;
+                free(dir_dup);
                 free(buf);
             } else {
                 fprintf(stderr, ":require: cannot open '%s'\n", t->as.str);
