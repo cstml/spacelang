@@ -12,14 +12,14 @@ all: bin/spci bin/spcc bin/spco bin/spcd lib/libspci.a
 bin lib:
 	mkdir -p $@
 
-bin/spci.o: spci.c include/spci.h | bin
-	cc $(CFLAGS) -c -o $@ spci.c
+bin/runtime.o: runtime.c include/spci.h | bin
+	cc $(CFLAGS) -c -o $@ runtime.c
 
-lib/libspci.a: bin/spci.o | lib
+lib/libspci.a: bin/runtime.o | lib
 	ar rcs $@ $<
 
-bin/spci: bin/spci.o spci_main.c include/spci.h | bin
-	cc $(CFLAGS) -o $@ spci_main.c bin/spci.o
+bin/spci: bin/runtime.o spci.c include/spci.h | bin
+	cc $(CFLAGS) -o $@ spci.c bin/runtime.o
 
 bin/spcc: spcc.c | bin
 	cc $(CFLAGS) -o $@ spcc.c
@@ -44,7 +44,7 @@ uninstall:
 	      $(DESTDIR)$(LIBDIR)/libspci.a $(DESTDIR)$(INCDIR)/spci.h
 
 clean:
-	rm -rf bin/spci bin/spcc bin/spco bin/spcd bin/spci.o lib/libspci.a
+	rm -rf bin/spci bin/spcc bin/spco bin/spcd bin/runtime.o lib/libspci.a
 
 test:
 	python3 test_harness.py
