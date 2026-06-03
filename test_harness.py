@@ -784,6 +784,20 @@ test/summary
         self.assertIn("FAIL b1", stderr)
         self.assertIn("FAIL: 1", stderr)
 
+    def test_example_tests_sp(self):
+        """example/tests.sp runs end-to-end through spct."""
+        _, stderr, rc = self.spct(str(ROOT / "example/tests.sp"))
+        self.assertIn("PASS 1+2=3", stderr)
+        self.assertIn("PASS 5*2=10", stderr)
+        self.assertIn("PASS 3*4!=13", stderr)
+        self.assertIn("PASS true passes", stderr)
+        self.assertIn("FAIL false fails", stderr)  # deliberate
+        self.assertIn("PASS 4>2", stderr)
+        self.assertIn("PASS nil", stderr)
+        self.assertIn("PASS concat", stderr)
+        self.assertIn("PASS: 7", stderr)
+        self.assertIn("FAIL: 1", stderr)
+
     # ── test.sp words via spci REPL ──
 
     def lib_eval(self, code):
