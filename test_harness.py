@@ -761,6 +761,7 @@ class TestSpcd(unittest.TestCase):
                 f"{FIXDIR}/test-repo.git missing; run `spci test_git.sp` first")
         cls._make_fixture_dep_a()
         cls._make_fixture_dep_b()
+        cls._make_fixture_dotty()
         cls._make_fixture_binrepo()
 
     @staticmethod
@@ -795,6 +796,19 @@ class TestSpcd(unittest.TestCase):
         seed.mkdir(parents=True)
         (seed / "lib.sp").write_text("{ dep-b stub }\n")
         (seed / "deps.sp").write_text(f'"{FIXDIR}/dep-a.git" deps/head\n')
+        cls._git_init_and_bare(seed, bare)
+        shutil.rmtree(seed, ignore_errors=True)
+
+    @classmethod
+    def _make_fixture_dotty(cls):
+        """Bare repo whose path contains dots — exercises the lock.sp
+        round-trip, since unquoted URLs with '.' get split by the parser."""
+        bare = FIXDIR / "site.example.com.git"
+        if bare.is_dir(): return
+        seed = FIXDIR / "_seed-dotty"
+        shutil.rmtree(seed, ignore_errors=True)
+        seed.mkdir(parents=True)
+        (seed / "lib.sp").write_text("{ dotty stub }\n")
         cls._git_init_and_bare(seed, bare)
         shutil.rmtree(seed, ignore_errors=True)
 
@@ -845,6 +859,22 @@ class TestSpcd(unittest.TestCase):
         before = Path("lock.sp").read_text()
         self.spcd("fetch")
         self.assertEqual(before, Path("lock.sp").read_text())
+
+    # -- T3b: regression — URLs with '.' must round-trip through lock.sp
+    def test_fetch_idempotent_dotted_url(self):
+        url = str(FIXDIR / "site.example.com.git")
+        self.spcd("add", url)
+        first = self.spcd("fetch")
+        self.assertEqual(first.returncode, 0)
+        self.assertNotIn("stack underflow", first.stdout + first.stderr)
+        self.assertNotIn("parser:",         first.stdout + first.stderr)
+        # Second fetch eval'd lock.sp — must not choke on the dotted URL.
+        second = self.spcd("fetch")
+        self.assertEqual(second.returncode, 0)
+        self.assertNotIn("stack underflow", second.stdout + second.stderr)
+        self.assertNotIn("parser:",         second.stdout + second.stderr)
+        self.assertIn("up to date",         second.stdout + second.stderr)
+        self.assertIn(url, Path("lock.sp").read_text())
 
     # -- T4
     def test_clean(self):
