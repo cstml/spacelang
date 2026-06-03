@@ -1,4 +1,5 @@
 bin/
+build/
 lib/libspci.a
 *.o
 __pycache__/
