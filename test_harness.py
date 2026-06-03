@@ -342,22 +342,58 @@ class TestRequirePreprocess(TimedTestCase):
         return p
 
     def test_inlines_library(self):
-        """`:require`d file is embedded — compiled binary has no fs dep."""
-        self.write("lib.sp", "[ 7 ] [seven] @\n")
+        """`:require`d file is embedded — after compile, deleting the .sp
+        sources (and moving the binary elsewhere) must not break the run."""
+        lib  = self.write("lib.sp", "[ 7 ] [seven] @\n")
         main = self.write("main.sp", '"lib.sp" :require seven .\n')
         bin_path = str(Path(self.tmp) / "out")
         r = spcc_compile(main, bin_path)
         self.assertEqual(r.returncode, 0, r.stderr)
-        # Move the binary AWAY from lib.sp and confirm it still works.
+
+        # Move the binary to a fresh dir, then nuke ALL the .sp sources.
         elsewhere = tempfile.mkdtemp()
         try:
             moved = Path(elsewhere) / "out"
             shutil.move(bin_path, moved)
+            os.unlink(lib)
+            os.unlink(main)
+            self.assertFalse(lib.exists())
+            self.assertFalse(main.exists())
+
             p = subprocess.run([str(moved)], capture_output=True, text=True, timeout=3)
             self.assertEqual(p.returncode, 0, p.stderr)
             self.assertIn("7", p.stdout)
         finally:
             shutil.rmtree(elsewhere, ignore_errors=True)
+
+    def test_binary_survives_source_deletion(self):
+        """End-to-end self-containment: write sources, compile, delete the
+        ENTIRE source tree, then the binary must still run correctly."""
+        self.write("greet.sp", '[ "hi-from-lib" . ] [greet] @\n')
+        self.write("util.sp",  '"greet.sp" :require [ 21 21 + . ] [answer] @\n')
+        main = self.write("main.sp", '"util.sp" :require greet answer\n')
+        bin_path = str(Path(self.tmp) / "out")
+
+        r = spcc_compile(main, bin_path)
+        self.assertEqual(r.returncode, 0, r.stderr)
+
+        # Move binary, then wipe the entire source dir.
+        elsewhere = tempfile.mkdtemp()
+        try:
+            moved = Path(elsewhere) / "out"
+            shutil.move(bin_path, moved)
+            shutil.rmtree(self.tmp)
+            self.assertFalse(Path(self.tmp).exists(),
+                "source tree should be gone before we run the binary")
+
+            p = subprocess.run([str(moved)], capture_output=True, text=True, timeout=3)
+            self.assertEqual(p.returncode, 0, p.stderr)
+            self.assertIn("hi-from-lib", p.stdout)
+            self.assertIn("42", p.stdout)
+        finally:
+            shutil.rmtree(elsewhere, ignore_errors=True)
+            # tearDown also rmtree's self.tmp; that's already ignore_errors=True.
+            os.makedirs(self.tmp, exist_ok=True)
 
     def test_recursive_require(self):
         """A required file may itself :require another."""
