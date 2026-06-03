@@ -1,6 +1,11 @@
-.PHONY: all clean test DockerRun
+.PHONY: all clean test DockerRun install uninstall
 
-all: spci spcc spco libspci.a
+PREFIX ?= $(HOME)/.local
+BINDIR  = $(PREFIX)/bin
+LIBDIR  = $(PREFIX)/lib
+INCDIR  = $(PREFIX)/include
+
+all: spci spcc spco spcd libspci.a
 
 spci.o: spci.c spci.h
 	cc -O2 -Wall -Wextra -c -o $@ spci.c
@@ -17,8 +22,22 @@ spcc: spcc.c
 spco: spco.sp spcc libspci.a spci.h
 	./spcc --as spco spco.sp -o $@
 
+spcd: spcd.sp spcc libspci.a spci.h
+	./spcc --as spcd spcd.sp -o $@
+
+install: all
+	install -d $(DESTDIR)$(BINDIR) $(DESTDIR)$(LIBDIR) $(DESTDIR)$(INCDIR)
+	install -m 755 spci spcc spco spcd $(DESTDIR)$(BINDIR)
+	install -m 644 libspci.a $(DESTDIR)$(LIBDIR)
+	install -m 644 spci.h $(DESTDIR)$(INCDIR)
+
+uninstall:
+	rm -f $(DESTDIR)$(BINDIR)/spci $(DESTDIR)$(BINDIR)/spcc \
+	      $(DESTDIR)$(BINDIR)/spco $(DESTDIR)$(BINDIR)/spcd \
+	      $(DESTDIR)$(LIBDIR)/libspci.a $(DESTDIR)$(INCDIR)/spci.h
+
 clean:
-	rm -f spci spcc spco spci.o libspci.a
+	rm -f spci spcc spco spcd spci.o libspci.a
 
 test:
 	python3 test_harness.py
