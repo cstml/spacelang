@@ -4,3 +4,4 @@ lib/libspci.a
 *.o
 __pycache__/
 docs-internal
+.pi/
