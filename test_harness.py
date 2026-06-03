@@ -36,9 +36,26 @@ SPCC  = str(ROOT / "spcc")
 SPCO  = str(ROOT / "spco")
 BUS   = "/tmp/spacelang_test"
 
+# Per-test hard timeout (seconds). Any test exceeding this raises and fails.
+TEST_TIMEOUT = 5
+
+
+class TimedTestCase(unittest.TestCase):
+    """Base class: each test method aborts with TimeoutError after TEST_TIMEOUT."""
+    def run(self, result=None):
+        def _on_alarm(*_):
+            raise TimeoutError(f"test exceeded {TEST_TIMEOUT}s")
+        prev = signal.signal(signal.SIGALRM, _on_alarm)
+        signal.alarm(TEST_TIMEOUT)
+        try:
+            super().run(result)
+        finally:
+            signal.alarm(0)
+            signal.signal(signal.SIGALRM, prev)
+
 # ── helpers ──────────────────────────────────────────────────────────
 
-def run_spci(stdin=None, args=(), timeout=5):
+def run_spci(stdin=None, args=(), timeout=4):
     """Run spci, return (stdout, stderr, returncode)."""
     p = subprocess.run(
         [SPCI] + list(args),
@@ -52,11 +69,11 @@ def spcc_compile(sp_file, output, debug=False):
     args = [SPCC]
     if debug: args.append("--debug")
     args.extend([str(sp_file), "-o", output])
-    return subprocess.run(args, capture_output=True, text=True, timeout=10)
+    return subprocess.run(args, capture_output=True, text=True, timeout=4)
 
 def output_matches(spci_stdout, compiled_bin):
     """Run a compiled binary and diff its stdout against spci's stdout."""
-    p = subprocess.run([compiled_bin], capture_output=True, text=True, timeout=5)
+    p = subprocess.run([compiled_bin], capture_output=True, text=True, timeout=4)
     return p.stdout == spci_stdout, p.stdout
 
 def cleanup_bus():
@@ -93,7 +110,7 @@ def frame_read(sock, timeout=2.0):
 
 # ── unit tests: language evaluation ───────────────────────────────────
 
-class TestEval(unittest.TestCase):
+class TestEval(TimedTestCase):
     """Language semantics — run via spci REPL and check output."""
 
     def eval(self, code):
@@ -184,6 +201,59 @@ class TestEval(unittest.TestCase):
         finally:
             os.unlink(tmp)
 
+    def test_cat(self):
+        out = self.eval('"foo" "bar" cat .')
+        self.assertIn('"foobar"', out)
+
+    def test_sleep(self):
+        t0 = time.time()
+        self.eval("200 :sleep")
+        self.assertGreaterEqual(time.time() - t0, 0.18)
+
+    def test_sh(self):
+        out = self.eval('"echo hello-from-sh" :sh .')
+        self.assertIn("hello-from-sh", out)
+        self.assertIn("0", out)  # exit status
+
+    def test_require(self):
+        import tempfile as _tf
+        with _tf.NamedTemporaryFile(mode="w", suffix=".sp", delete=False) as f:
+            f.write("[ 7 ] [seven] @\n")
+            lib = f.name
+        try:
+            out = self.eval(f'"{lib}" :require seven ! .')
+            self.assertIn("7", out)
+        finally:
+            os.unlink(lib)
+
+    def test_exists_false(self):
+        # Without --name/--bus, bus_dir is NULL → :exists is always false
+        out = self.eval('"NoSuchPeer" :exists .')
+        self.assertIn("0", out)
+
+    def test_name_str_roundtrip(self):
+        # name>str pulls the name out of a [X] form
+        out = self.eval('[foo] name>str .')
+        self.assertIn('"foo"', out)
+        # str>name wraps a string into a [X] form
+        out = self.eval('"bar" str>name .')
+        self.assertIn('[bar]', out)
+        # round-trip preserves the name
+        out = self.eval('[baz] name>str str>name name>str .')
+        self.assertIn('"baz"', out)
+
+    def test_namespaced_word(self):
+        # words can contain `/` for namespacing
+        out = self.eval('[ 7 ] [ns/foo] @  ns/foo ! .')
+        self.assertIn("7", out)
+        out = self.eval('[ 5 ] [a/b/c] @  a/b/c ! .')
+        self.assertIn("5", out)
+
+    def test_string_destination(self):
+        # "X" used as binding destination should be accepted same as [X]
+        out = self.eval('[ 99 ] "X" @  X .')
+        self.assertIn("99", out)
+
     def test_comments(self):
         out = self.eval("{ this is a comment } 7 .")
         self.assertIn("7", out)
@@ -193,7 +263,7 @@ class TestEval(unittest.TestCase):
 
 # ── compile tests: spcc produces correct binaries ─────────────────────
 
-class TestCompile(unittest.TestCase):
+class TestCompile(TimedTestCase):
     """spcc compiles .sp files into running binaries that match spci."""
 
     def setUp(self):
@@ -248,7 +318,7 @@ class TestCompile(unittest.TestCase):
 
         r = spcc_compile(sp, bin_path)
         self.assertEqual(r.returncode, 0, f"spcc failed:\n{r.stderr}")
-        p = subprocess.run([bin_path], input="5\n", capture_output=True, text=True, timeout=5)
+        p = subprocess.run([bin_path], input="5\n", capture_output=True, text=True, timeout=4)
         self.assertEqual(p.returncode, 0)
         self.assertIn("1\n1\n2\n3\n5\n8", p.stdout)
 
@@ -267,7 +337,7 @@ TERMS = [
     ":s",
 ]
 
-class TestProperty(unittest.TestCase):
+class TestProperty(TimedTestCase):
     """Randomized sequences should never crash the interpreter."""
 
     def test_random_sequences(self):
@@ -291,7 +361,7 @@ class TestProperty(unittest.TestCase):
                 seq.append(rng.choice(PUSHERS))
                 seq.append(rng.choice(OPS))
             code = " ".join(seq) + " :bye"
-            out, err, rc = run_spci(stdin=code, timeout=5)
+            out, err, rc = run_spci(stdin=code, timeout=4)
             if rc != 0 and "stack underflow" not in err and "expected number" not in err:
                 failures.append((seq, err))
 
@@ -304,8 +374,8 @@ class TestProperty(unittest.TestCase):
 
 # ── mesh tests: spco + spci nodes over Unix sockets ──────────────────
 
-class TestMesh(unittest.TestCase):
-    """End-to-end mesh communication: spco orchestrator + spci peers."""
+class TestMesh(TimedTestCase):
+    """End-to-end mesh: spco (filesystem discovery) + spci peers."""
 
     def setUp(self):
         cleanup_bus()
@@ -322,133 +392,187 @@ class TestMesh(unittest.TestCase):
         time.sleep(0.15)
         cleanup_bus()
 
-    def start_spco(self, *entries):
-        """Start spco, return Popen. Each entry is 'NAME=CMD'."""
+    def start_spco(self):
+        """Start spco (compiled from spco.sp). Serves on $BUS/spco.sock."""
         self.spco_proc = subprocess.Popen(
-            [SPCO, "--bus", BUS] + list(entries),
+            [SPCO, "--bus", BUS, "--serve"],
             stderr=subprocess.PIPE, text=True
         )
-        # Wait for spco to be listening
         deadline = time.time() + 3
         while time.time() < deadline:
-            line = self.spco_proc.stderr.readline()
-            if "listening" in line:
+            if os.path.exists(f"{BUS}/spco.sock"):
                 return
-        self.fail("spco didn't start listening")
+            time.sleep(0.05)
+        self.fail("spco didn't bind spco.sock")
 
-    def spco_stderr_contains(self, needle, timeout=3):
-        """Read spco stderr until we see `needle` or timeout."""
-        deadline = time.time() + timeout
-        buf = ""
+    def start_worker(self, name, script=""):
+        """Start a spci mesh node with --serve, wait for its socket."""
+        d = tempfile.mkdtemp()
+        (Path(d) / "w.sp").write_text(script)
+        self.addCleanup(lambda: shutil.rmtree(d, ignore_errors=True))
+        p = subprocess.Popen(
+            [SPCI, "--name", name, "--bus", BUS, "--serve", str(Path(d) / "w.sp")],
+            stderr=subprocess.PIPE, text=True
+        )
+        self.workers.append(p)
+        deadline = time.time() + 2
         while time.time() < deadline:
-            # non-blocking read from stderr
-            import select
-            r, _, _ = select.select([self.spco_proc.stderr], [], [], 0.2)
-            if r:
-                chunk = os.read(self.spco_proc.stderr.fileno(), 4096).decode()
-                buf += chunk
-                if needle in buf:
-                    return True
-        return needle in buf
+            if os.path.exists(f"{BUS}/{name}.sock"):
+                return
+            time.sleep(0.05)
+        self.fail(f"{name} did not bind")
 
-    def spco_lookup(self, name, timeout=3):
-        """Send LOOKUP to spco, return ADDR payload or None."""
-        sock = socket.socket(socket.AF_UNIX, socket.SOCK_STREAM)
-        sock.settimeout(timeout)
-        try:
-            sock.connect(f"{BUS}/spco.sock")
-            frame_write(sock, 0x06, name.encode())  # TAG_LOOKUP
-            result = frame_read(sock, timeout)
-            if result and result[0] == 0x07:  # TAG_ADDR
-                return result[1].decode()
-            return None
-        finally:
-            sock.close()
+    def test_spco_starts_and_binds(self):
+        """spco binary built from spco.sp starts and binds its socket."""
+        self.start_spco()
+        self.assertTrue(os.path.exists(f"{BUS}/spco.sock"))
 
-    def test_spco_lookup_spawns_child(self):
-        """spco spawns a child on LOOKUP and returns its ADDR."""
-        self.start_spco(f"W={SPCI} --bus {BUS} --serve /dev/null")
-        addr = self.spco_lookup("W")
-        self.assertIsNotNone(addr, "spco did not return ADDR")
-        self.assertIn("W.sock", addr)
-        # Verify the child's socket actually exists
-        self.assertTrue(os.path.exists(addr), f"socket not found: {addr}")
-
-    def test_spco_unknown_name(self):
-        """spco closes connection for unknown names."""
-        self.start_spco(f"W={SPCI} --bus {BUS} --serve /dev/null")
-        addr = self.spco_lookup("NoSuchPeer")
-        self.assertIsNone(addr, "spco should not resolve unknown name")
-
-    def test_spco_crash_backoff(self):
-        """After a child exits, spco applies backoff before respawn."""
-        # Quick worker: runs and exits (no --serve). spco appends --name X --bus ...
-        quick_sp = Path(tempfile.mkdtemp()) / "quick.sp"
-        quick_sp.write_text("1 .\n")
-        self.addCleanup(lambda: shutil.rmtree(quick_sp.parent, ignore_errors=True))
-
-        self.start_spco(f"X={SPCI} --bus {BUS} {quick_sp}")
-
-        # First lookup spawns it, child runs and exits
-        addr1 = self.spco_lookup("X")
-        self.assertIsNotNone(addr1, "first lookup should spawn X")
-
-        # Wait for child to exit
-        time.sleep(0.4)
-
-        # Second lookup should be in backoff (100ms default)
-        addr2 = self.spco_lookup("X", timeout=1)
-        self.assertIsNone(addr2, "spco should refuse during backoff")
-
-    def test_mesh_push(self):
-        """Driver sends a value to a worker via $, worker receives it."""
-        # Worker script: after receiving, print stack
-        worker_sp = Path(tempfile.mkdtemp()) / "w.sp"
-        worker_sp.write_text("")  # empty, just serves
-        self.addCleanup(lambda: shutil.rmtree(worker_sp.parent, ignore_errors=True))
-
-        self.start_spco(f"W={SPCI} --bus {BUS} --serve {worker_sp}")
-
-        # Start worker explicitly (by lookup)
-        self.spco_lookup("W")
-        time.sleep(0.3)
-
-        # Driver sends a value to W via $?
-        driver_sp = Path(tempfile.mkdtemp()) / "d.sp"
-        driver_sp.write_text('42 [W] 2000 $? . :bye\n')
-        self.addCleanup(lambda: shutil.rmtree(driver_sp.parent, ignore_errors=True))
-
+    def test_spco_spawns_via_eval(self):
+        """A peer sends EVAL to spco asking it to spawn-node "X";
+        spco runs spawn-node which shells out an spci for X."""
+        self.start_spco()
+        # Driver sends `"X" spawn-node !` to spco via $!
+        # spco receives EVAL, feeds payload, spawn-node forks an spci.
         out, err, rc = run_spci(
-            args=["--name", "D", "--bus", BUS, str(driver_sp)],
-            timeout=5
+            stdin='[ "X" spawn-node ! ] "spco" $!  500 :sleep  :bye\n',
+            args=["--name", "DRV", "--bus", BUS],
+            timeout=4,
         )
-        self.assertEqual(rc, 0, f"driver failed:\n{err}")
-        self.assertIn("t", out, "expected ACK (t) from sync send")
+        self.assertEqual(rc, 0, f"spci failed:\n{err}")
+        # Give spawn-node's :sh + :sleep time to bind X.
+        for _ in range(20):
+            if os.path.exists(f"{BUS}/X.sock"):
+                break
+            time.sleep(0.1)
+        self.assertTrue(os.path.exists(f"{BUS}/X.sock"),
+            "spco should have spawned X via spawn-node")
+        # Clean up X
+        subprocess.run(["pkill", "-f", "name X"], capture_output=True)
 
-    def test_mesh_eval(self):
-        """Driver evaluates a thunk on a worker via $!."""
-        worker_sp = Path(tempfile.mkdtemp()) / "w.sp"
-        worker_sp.write_text("[ 2 * ] [double] @\n")
-        self.addCleanup(lambda: shutil.rmtree(worker_sp.parent, ignore_errors=True))
+    def test_mesh_direct_connect(self):
+        """Peer connects directly (socket exists, no spco needed)."""
+        self.start_worker("W")
+        out, err, rc = run_spci(
+            stdin="42 [W] 2000 $? . :bye\n",
+            args=["--name", "A", "--bus", BUS],
+            timeout=4
+        )
+        self.assertEqual(rc, 0, f"spci failed:\n{err}")
+        self.assertIn("t", out, f"expected ACK, got:\n{out}\n{err}")
 
-        self.start_spco(f"W={SPCI} --bus {BUS} --serve {worker_sp}")
-        self.spco_lookup("W")
+    def test_mesh_with_spco_running(self):
+        """Direct connect still works fine when spco is also running."""
+        self.start_worker("W")
+        self.start_spco()
+        out, err, rc = run_spci(
+            stdin="42 [W] 2000 $? . :bye\n",
+            args=["--name", "A", "--bus", BUS],
+            timeout=4
+        )
+        self.assertEqual(rc, 0, f"spci failed:\n{err}")
+        self.assertIn("t", out, f"expected ACK, got:\n{out}\n{err}")
+
+    def test_spco_respawn_after_death(self):
+        """If a peer dies (its socket left stale), spco/$ must respawn it."""
+        self.start_spco()
+        d = tempfile.mkdtemp()
+        self.addCleanup(lambda: shutil.rmtree(d, ignore_errors=True))
+        # first call: spawn Z
+        p1 = Path(d) / "first.sp"
+        p1.write_text(
+            f'"{ROOT}/with-spco.sp" :require\n'
+            '"one" [Z] spco/$\n'
+        )
+        _, err, rc = run_spci(stdin=":bye\n",
+            args=["--name", "C1", "--bus", BUS, str(p1)], timeout=4)
+        self.assertEqual(rc, 0, err)
+        time.sleep(0.4)
+        self.assertTrue(os.path.exists(f"{BUS}/Z.sock"))
+
+        # kill Z hard, leave stale socket on disk
+        subprocess.run(["pkill", "-9", "-f", "name Z"], capture_output=True)
         time.sleep(0.3)
+        # touch the file to ensure it stays (SIGKILL may have left it anyway)
+        Path(f"{BUS}/Z.sock").touch(exist_ok=True)
 
-        # Send [21 double !] to W via $!, then ask for W's stack
-        driver_sp = Path(tempfile.mkdtemp()) / "d.sp"
-        driver_sp.write_text(
-            "[ 21 double ! ] [W] $!  "
-            "[ :s ] [W] $!  "
-            ":bye\n"
+        # second call: spco/$ should detect Z is dead (:alive false) and respawn
+        p2 = Path(d) / "second.sp"
+        p2.write_text(
+            f'"{ROOT}/with-spco.sp" :require\n'
+            '"two" [Z] spco/$\n'
         )
-        self.addCleanup(lambda: shutil.rmtree(driver_sp.parent, ignore_errors=True))
+        _, err, rc = run_spci(stdin=":bye\n",
+            args=["--name", "C2", "--bus", BUS, str(p2)], timeout=4)
+        self.assertEqual(rc, 0, err)
+        time.sleep(0.5)
+        # Real test: connect to Z.sock and confirm it accepts
+        try:
+            s = socket.socket(socket.AF_UNIX, socket.SOCK_STREAM)
+            s.settimeout(1.0)
+            s.connect(f"{BUS}/Z.sock")
+            s.close()
+        except OSError as e:
+            self.fail(f"Z.sock is not connectable after respawn: {e}")
+        subprocess.run(["pkill", "-f", "name Z"], capture_output=True)
 
-        _, err, rc = run_spci(
-            args=["--name", "D", "--bus", BUS, str(driver_sp)],
-            timeout=5
+    def test_spco_eval_variant(self):
+        """spco/$! ensures peer is up, then sends EVAL."""
+        self.start_spco()
+        d = tempfile.mkdtemp()
+        self.addCleanup(lambda: shutil.rmtree(d, ignore_errors=True))
+        prog = Path(d) / "drv.sp"
+        prog.write_text(
+            f'"{ROOT}/with-spco.sp" :require\n'
+            '[ 21 21 + ] [W2] spco/$!\n'
         )
-        self.assertEqual(rc, 0, f"driver failed:\n{err}")
+        _, err, rc = run_spci(stdin=":bye\n",
+            args=["--name", "C", "--bus", BUS, str(prog)], timeout=4)
+        self.assertEqual(rc, 0, err)
+        time.sleep(0.5)
+        self.assertTrue(os.path.exists(f"{BUS}/W2.sock"),
+            "W2 should have been spawned via spco/$!")
+        subprocess.run(["pkill", "-f", "name W2"], capture_output=True)
+
+    def test_via_spco_helper(self):
+        """with-spco.sp gives callers a `via-spco` word that asks spco
+        to ensure a peer is up, then sends a message direct."""
+        self.start_spco()
+        # Run a driver that loads with-spco.sp and sends to "Y".
+        d = tempfile.mkdtemp()
+        self.addCleanup(lambda: shutil.rmtree(d, ignore_errors=True))
+        prog = Path(d) / "drv.sp"
+        prog.write_text(
+            f'"{ROOT}/with-spco.sp" :require\n'
+            '"hi" [Y] via-spco\n'
+        )
+        out, err, rc = run_spci(
+            stdin=":bye\n",
+            args=["--name", "DRV2", "--bus", BUS, str(prog)],
+            timeout=4,
+        )
+        self.assertEqual(rc, 0, f"spci failed:\n{err}")
+        # Y should now be bound (spawn-node ran via spco)
+        for _ in range(20):
+            if os.path.exists(f"{BUS}/Y.sock"):
+                break
+            time.sleep(0.1)
+        self.assertTrue(os.path.exists(f"{BUS}/Y.sock"),
+            "Y should have been spawned via via-spco")
+        subprocess.run(["pkill", "-f", "name Y"], capture_output=True)
+
+    def test_mesh_eval_remote(self):
+        """Driver evaluates a thunk on a worker via $!.
+
+        Note: $! output goes to the remote worker's stdout, not the
+        driver's. We just verify the driver doesn't crash.
+        """
+        self.start_worker("W", "[ 2 * ] [double] @\n")
+        out, err, rc = run_spci(
+            stdin="[ 21 double ! ] [W] $!  :bye\n",
+            args=["--name", "A", "--bus", BUS],
+            timeout=4
+        )
+        self.assertEqual(rc, 0, f"spci failed:\n{err}")
 
 
 # ── main ──────────────────────────────────────────────────────────────

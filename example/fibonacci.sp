@@ -14,11 +14,11 @@ slurp eval [i] @
 
 [firstNumber .] [printFirstFibo] @
 
-[ nextFibo ! secondNumber [firstNumber] @ [secondNumber] @] [swapWithNextFibos] @
+[ nextFibo secondNumber [firstNumber] @ [secondNumber] @ ] [swapWithNextFibos] @
 
-[[ printFirstFibo ! :bye ]
- [ printFirstFibo ! swapWithNextFibos ! decreaseI ! areWeThereYet ! ]
+[[ printFirstFibo :bye ]
+ [ printFirstFibo swapWithNextFibos decreaseI areWeThereYet ]
  i if ! ]
 [areWeThereYet] @
 
-areWeThereYet !
+areWeThereYet
