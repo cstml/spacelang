@@ -250,11 +250,41 @@ class TestEval(TimedTestCase):
         self.assertIn('"1.2.3"', out)
         # final boolean from str/starts-with?
         self.assertIn("t", out)
+        # sh/| with grep -q: found and not-found cases
+        self.assertIn("256", out)
+        # sh/|> upper-case
+        self.assertIn('"HELLO"', out)
+        # sh/|> word count
+        self.assertIn('"4"', out)
+        # sh/> | sh/|> pipeline
+        self.assertIn('"a\nb\nc"', out)
 
     def test_sh_capture_composable(self):
         # The captured string flows into the rest of the language.
         out = self.eval('"echo 41" sh/> eval 1 + .')
         self.assertIn("42", out)
+
+    def test_sh_pipe_capture(self):
+        # sh/|> pipes stdin into cmd, captures stdout.
+        out = self.eval('"abc" "cat" sh/|> .')
+        self.assertIn('"abc"', out)
+        # word count: stdin "hello world" → wc -w → 2
+        out = self.eval('"hello world" "wc -w" sh/|> .')
+        self.assertIn('"2"', out)
+
+    def test_sh_pipe_status(self):
+        # sh/| pipes stdin into cmd, pushes exit status.
+        out = self.eval('"anything" "true" sh/| .')
+        self.assertIn("0", out)
+        out = self.eval('"anything" "false" sh/| .')
+        # false → exit 1; system()-style status<<8 == 256
+        self.assertIn("256", out)
+
+    def test_sh_pipe_chain(self):
+        # Chain sh/> into sh/|> for a fully spacelang-driven pipeline:
+        # produce "c\nb\na\n" via printf, capture, pipe to `sort`, capture.
+        out = self.eval('''"printf 'c\\nb\\na\\n'" sh/> "sort" sh/|> .''')
+        self.assertIn('"a\nb\nc"', out)
 
     def test_require(self):
         import tempfile as _tf

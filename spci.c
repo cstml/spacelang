@@ -43,6 +43,7 @@
 #include <signal.h>
 #include <sys/un.h>
 #include <sys/stat.h>
+#include <sys/wait.h>
 
 #include "spci.h"
 
@@ -575,7 +576,7 @@ static Value *parse_term(Lex *L) {
         size_t start = L->i;
         L->i++;
         while (L->i < L->n &&
-               (isalnum((unsigned char)L->src[L->i]) || L->src[L->i] == '_' || L->src[L->i] == '-' || L->src[L->i] == '/' || L->src[L->i] == '>' || L->src[L->i] == '$' || L->src[L->i] == '?' || L->src[L->i] == '!'))
+               (isalnum((unsigned char)L->src[L->i]) || L->src[L->i] == '_' || L->src[L->i] == '-' || L->src[L->i] == '/' || L->src[L->i] == '>' || L->src[L->i] == '$' || L->src[L->i] == '?' || L->src[L->i] == '!' || L->src[L->i] == '|'))
             L->i++;
         char *buf = malloc(L->i - start + 1);
         memcpy(buf, L->src + start, L->i - start);
@@ -596,7 +597,7 @@ static Value *parse_term(Lex *L) {
     if (isalpha((unsigned char)c) || c == '_') {
         size_t start = L->i;
         while (L->i < L->n &&
-               (isalnum((unsigned char)L->src[L->i]) || L->src[L->i] == '_' || L->src[L->i] == '-' || L->src[L->i] == '/' || L->src[L->i] == '>' || L->src[L->i] == '$' || L->src[L->i] == '?' || L->src[L->i] == '!'))
+               (isalnum((unsigned char)L->src[L->i]) || L->src[L->i] == '_' || L->src[L->i] == '-' || L->src[L->i] == '/' || L->src[L->i] == '>' || L->src[L->i] == '$' || L->src[L->i] == '?' || L->src[L->i] == '!' || L->src[L->i] == '|'))
             L->i++;
         char *buf = malloc(L->i - start + 1);
         memcpy(buf, L->src + start, L->i - start);
@@ -854,6 +855,97 @@ static void eval_word(const char *w) {
         else fprintf(stderr, "sh/!: expected string\n");
         v_unref(t);
         push(v_num(rc));
+        return;
+    }
+
+    /* sh/| and sh/|> — pipe input string into the command's stdin.
+     *   stack: input cmd sh/|   -- exit-status
+     *   stack: input cmd sh/|>  -- captured-stdout
+     * sh/|  inherits stdout from parent; pushes exit status.
+     * sh/|> captures stdout (single trailing \n stripped). */
+    if (!strcmp(w, "sh/|") || !strcmp(w, "sh/|>")) {
+        int capture = !strcmp(w, "sh/|>");
+        Value *cmd = pop(), *in = pop();
+        if (!cmd || cmd->type != V_STR || !in || in->type != V_STR) {
+            fprintf(stderr, "%s: expected (input cmd) both strings\n", w);
+            v_unref(cmd); v_unref(in);
+            if (capture) push(v_str("")); else push(v_num(-1));
+            return;
+        }
+        int in_pipe[2], out_pipe[2];
+        if (pipe(in_pipe) < 0) {
+            fprintf(stderr, "%s: pipe failed: %s\n", w, strerror(errno));
+            v_unref(cmd); v_unref(in);
+            if (capture) push(v_str("")); else push(v_num(-1));
+            return;
+        }
+        if (capture && pipe(out_pipe) < 0) {
+            close(in_pipe[0]); close(in_pipe[1]);
+            fprintf(stderr, "%s: pipe failed: %s\n", w, strerror(errno));
+            v_unref(cmd); v_unref(in);
+            push(v_str("")); return;
+        }
+        pid_t pid = fork();
+        if (pid < 0) {
+            close(in_pipe[0]); close(in_pipe[1]);
+            if (capture) { close(out_pipe[0]); close(out_pipe[1]); }
+            fprintf(stderr, "%s: fork failed: %s\n", w, strerror(errno));
+            v_unref(cmd); v_unref(in);
+            if (capture) push(v_str("")); else push(v_num(-1));
+            return;
+        }
+        if (pid == 0) {
+            dup2(in_pipe[0], 0);
+            close(in_pipe[0]); close(in_pipe[1]);
+            if (capture) {
+                dup2(out_pipe[1], 1);
+                close(out_pipe[0]); close(out_pipe[1]);
+            }
+            execl("/bin/sh", "sh", "-c", cmd->as.str, (char*)NULL);
+            _exit(127);
+        }
+        close(in_pipe[0]);
+        if (capture) close(out_pipe[1]);
+
+        /* write input, then close to signal EOF. SIGPIPE-safe via MSG_NOSIGNAL?
+         * write() can raise SIGPIPE if child exits early; ignore briefly. */
+        void (*old)(int) = signal(SIGPIPE, SIG_IGN);
+        const char *p = in->as.str;
+        size_t remaining = strlen(p);
+        while (remaining > 0) {
+            ssize_t n = write(in_pipe[1], p, remaining);
+            if (n <= 0) break;
+            p += n; remaining -= n;
+        }
+        close(in_pipe[1]);
+        signal(SIGPIPE, old);
+
+        char *out_buf = NULL; size_t out_len = 0;
+        if (capture) {
+            size_t cap = 256;
+            out_buf = malloc(cap);
+            for (;;) {
+                if (out_len + 1 >= cap) { cap *= 2; out_buf = realloc(out_buf, cap); }
+                ssize_t n = read(out_pipe[0], out_buf + out_len, cap - out_len - 1);
+                if (n <= 0) break;
+                out_len += n;
+            }
+            close(out_pipe[0]);
+        }
+
+        int status = 0;
+        waitpid(pid, &status, 0);
+        v_unref(cmd); v_unref(in);
+
+        if (capture) {
+            if (out_len > 0 && out_buf[out_len-1] == '\n') out_len--;
+            out_buf[out_len] = 0;
+            Value *r = v_str(out_buf);
+            free(out_buf);
+            push(r);
+        } else {
+            push(v_num(status));
+        }
         return;
     }
 

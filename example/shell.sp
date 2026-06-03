@@ -41,3 +41,26 @@ str/tail                    { "1.2.3" }
 
 "my user name (captured): " .
 "id -un" sh/> .             { → "<your username>" }
+
+
+{ ----- sh/| : pipe stdin into a command, push its exit status ----- }
+
+"grep finds 'needle' in piped stdin?" .
+"haystack needle hay" "grep -q needle" sh/| .   { → 0 (found) }
+"haystack hay"        "grep -q needle" sh/| .   { → 256 (not found, exit 1 << 8) }
+
+
+{ ----- sh/|> : pipe stdin into a command, capture its stdout ----- }
+
+"upper-case via tr:" .
+"hello" "tr a-z A-Z" sh/|> .                    { → "HELLO" }
+
+"word count of piped input:" .
+"the quick brown fox" "wc -w" sh/|> .           { → "4" (wc pads with spaces) }
+
+
+{ ----- chain sh/> into sh/|> for a full pipeline driven by spacelang ----- }
+
+"sorted lines, all spacelang-driven:" .
+"printf 'c\nb\na\n'" sh/>                       { capture: "c\nb\na" }
+"sort" sh/|> .                                  { pipe to sort, capture: "a\nb\nc" }
