@@ -31,9 +31,9 @@ import shutil
 from pathlib import Path
 
 ROOT = Path(__file__).resolve().parent
-SPCI  = str(ROOT / "spci")
-SPCC  = str(ROOT / "spcc")
-SPCO  = str(ROOT / "spco" / "spco")
+SPCI  = str(ROOT / "bin" / "spci")
+SPCC  = str(ROOT / "bin" / "spcc")
+SPCO  = str(ROOT / "bin" / "spco")
 BUS   = "/tmp/spacelang_test"
 
 # Per-test hard timeout (seconds). Any test exceeding this raises and fails.
@@ -736,7 +736,7 @@ class TestProperty(TimedTestCase):
 
 # ── spcd integration: package manager verbs against local bare repos ──
 
-SPCD   = str(ROOT / "spcd" / "spcd")
+SPCD   = str(ROOT / "bin" / "spcd")
 FIXDIR = Path("/tmp/spacelang_git_test")
 
 
@@ -755,7 +755,7 @@ class TestSpcd(unittest.TestCase):
     def setUpClass(cls):
         if not os.path.exists(SPCD):
             raise unittest.SkipTest("spcd binary missing; run `make spcd` or "
-                                    "`./spcc --as spcd spcd.sp -o spcd`")
+                                    "`./bin/spcc --as spcd spcd/spcd.sp -o bin/spcd`")
         if not (FIXDIR / "test-repo.git").is_dir():
             raise unittest.SkipTest(
                 f"{FIXDIR}/test-repo.git missing; run `spci test_git.sp` first")
@@ -829,9 +829,9 @@ class TestSpcd(unittest.TestCase):
         self.spcd("add", str(FIXDIR / "test-repo.git"))
         self.assertTrue(Path("deps.sp").is_file())
         self.assertIn("deps/head", Path("deps.sp").read_text())
-        self.assertTrue(Path("lib/test-repo").is_dir())
+        self.assertTrue(Path("spcd_lib/test-repo").is_dir())
         self.assertIn("0c7e6d3d9794a92ede8dfa53040de810dd3f6e7a",
-                      Path("lib/lock.sp").read_text())
+                      Path("spcd_lib/lock.sp").read_text())
 
     # -- T2
     def test_list_prints_lock(self):
@@ -842,47 +842,47 @@ class TestSpcd(unittest.TestCase):
     # -- T3
     def test_fetch_is_idempotent(self):
         self.spcd("add", str(FIXDIR / "test-repo.git"))
-        before = Path("lib/lock.sp").read_text()
+        before = Path("spcd_lib/lock.sp").read_text()
         self.spcd("fetch")
-        self.assertEqual(before, Path("lib/lock.sp").read_text())
+        self.assertEqual(before, Path("spcd_lib/lock.sp").read_text())
 
     # -- T4
     def test_clean(self):
         self.spcd("add", str(FIXDIR / "test-repo.git"))
-        self.assertTrue(Path("lib").is_dir())
+        self.assertTrue(Path("spcd_lib").is_dir())
         self.spcd("clean")
-        self.assertFalse(Path("lib").exists())
+        self.assertFalse(Path("spcd_lib").exists())
 
     # -- T5
     def test_add_branch_heuristic(self):
         self.spcd("add", f"{FIXDIR}/test-repo.git@feature")
         self.assertIn("deps/branch", Path("deps.sp").read_text())
         self.assertIn("54c049cc2f66285604f32e8f75ec744f777465b0",
-                      Path("lib/lock.sp").read_text())
+                      Path("spcd_lib/lock.sp").read_text())
 
     # -- T6
     def test_add_sha_heuristic(self):
         sha = "0c7e6d3d9794a92ede8dfa53040de810dd3f6e7a"
         self.spcd("add", f"{FIXDIR}/test-repo.git@{sha}")
         self.assertIn("deps/sha", Path("deps.sp").read_text())
-        self.assertIn(sha, Path("lib/lock.sp").read_text())
+        self.assertIn(sha, Path("spcd_lib/lock.sp").read_text())
 
     # -- T7
     def test_transitive_deps(self):
         self.spcd("add", str(FIXDIR / "dep-b.git"))
-        self.assertTrue(Path("lib/dep-b").is_dir(), "dep-b not cloned")
-        self.assertTrue(Path("lib/dep-a").is_dir(), "dep-a not cloned transitively")
-        lock = Path("lib/lock.sp").read_text()
+        self.assertTrue(Path("spcd_lib/dep-b").is_dir(), "dep-b not cloned")
+        self.assertTrue(Path("spcd_lib/dep-a").is_dir(), "dep-a not cloned transitively")
+        lock = Path("spcd_lib/lock.sp").read_text()
         self.assertIn("dep-b.git", lock)
         self.assertIn("dep-a.git", lock)
 
     # -- T8
     def test_update_rewrites_lock(self):
         self.spcd("add", str(FIXDIR / "test-repo.git"))
-        Path("lib/lock.sp").write_text("/tmp/fake fakesha\n")
+        Path("spcd_lib/lock.sp").write_text("/tmp/fake fakesha\n")
         self.spcd("update")
         self.assertIn("0c7e6d3d9794a92ede8dfa53040de810dd3f6e7a",
-                      Path("lib/lock.sp").read_text())
+                      Path("spcd_lib/lock.sp").read_text())
 
     # -- T9
     def test_install_builds_and_runs(self):
@@ -890,7 +890,7 @@ class TestSpcd(unittest.TestCase):
         env = {
             "SPACELANG_BIN":  str(bindir),
             "SPACELANG_ROOT": str(ROOT),
-            "PATH":           f"{ROOT}:{os.environ.get('PATH', '')}",
+            "PATH":           f"{ROOT}/bin:{os.environ.get('PATH', '')}",
         }
         self.spcd("install", str(FIXDIR / "binrepo.git"), env=env)
         binary = bindir / "binrepo"
@@ -922,9 +922,10 @@ class TestMesh(TimedTestCase):
 
     def start_spco(self):
         """Start spco (compiled from spco.sp). Serves on $BUS/spco.sock."""
+        env = {**os.environ, "PATH": f"{ROOT}/bin:{os.environ.get('PATH', '')}"}
         self.spco_proc = subprocess.Popen(
             [SPCO, "--bus", BUS, "--serve"],
-            stderr=subprocess.PIPE, text=True
+            stderr=subprocess.PIPE, text=True, env=env
         )
         deadline = time.time() + 3
         while time.time() < deadline:

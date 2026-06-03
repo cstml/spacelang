@@ -240,14 +240,18 @@ static int file_exists(const char *path) {
     return stat(path, &st) == 0 && S_ISREG(st.st_mode);
 }
 
+/* Runtime layout: <root>/include/spci.h and <root>/lib/libspci.a.
+ * That's both the install prefix layout ($PREFIX/{include,lib}) and the
+ * dev-tree layout (repo root has include/ and lib/), so spcc finds the
+ * runtime by walking up one dir from its own bin/ location. */
 static int root_has_runtime(const char *root) {
     char p[PATH_MAX];
-    snprintf(p, sizeof p, "%s/spci.h",    root); if (!file_exists(p)) return 0;
-    snprintf(p, sizeof p, "%s/libspci.a", root); if (!file_exists(p)) return 0;
+    snprintf(p, sizeof p, "%s/include/spci.h", root); if (!file_exists(p)) return 0;
+    snprintf(p, sizeof p, "%s/lib/libspci.a",  root); if (!file_exists(p)) return 0;
     return 1;
 }
 
-/* find SPACELANG_ROOT — env override, then next to the spcc binary. */
+/* find SPACELANG_ROOT — env override, then walk up from spcc's bin/ dir. */
 static char *find_root(void) {
     const char *env = getenv("SPACELANG_ROOT");
     if (env && *env && root_has_runtime(env)) return strdup(env);
@@ -256,10 +260,11 @@ static char *find_root(void) {
     ssize_t n = readlink("/proc/self/exe", exe, sizeof exe - 1);
     if (n > 0) {
         exe[n] = 0;
-        char *dup = strdup(exe);
-        char *d = dirname(dup);
-        if (root_has_runtime(d)) { char *r = strdup(d); free(dup); return r; }
-        free(dup);
+        /* exe = .../bin/spcc → parent of dirname is the prefix */
+        char *d1 = strdup(exe); char *bind = dirname(d1);
+        char *d2 = strdup(bind); char *root = dirname(d2);
+        if (root_has_runtime(root)) { char *r = strdup(root); free(d1); free(d2); return r; }
+        free(d1); free(d2);
     }
     return NULL;
 }
@@ -315,9 +320,9 @@ static void emit(FILE *out, const char *sp_src, size_t sp_len, const char *bake_
 
 static int run_cc(const char *cc, const char *root,
                   const char *cfile, const char *output, int debug) {
-    char lib[PATH_MAX], inc[PATH_MAX + 2];
-    snprintf(lib, sizeof lib, "%s/libspci.a", root);
-    snprintf(inc, sizeof inc, "-I%s", root);
+    char lib[PATH_MAX], inc[PATH_MAX + 16];
+    snprintf(lib, sizeof lib, "%s/lib/libspci.a", root);
+    snprintf(inc, sizeof inc, "-I%s/include", root);
 
     pid_t pid = fork();
     if (pid < 0) { perror("fork"); return -1; }
