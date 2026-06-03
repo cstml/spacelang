@@ -422,7 +422,7 @@ class TestStr(TimedTestCase):
         return out
 
     def lib_eval(self, code):
-        return self.eval(code, preamble=f'"{ROOT}/lib/str.sp" :require\n')
+        return self.eval(code, preamble=f'"{ROOT}/stdlib/str.sp" :require\n')
 
     # ----- C primitives -----
 
@@ -1008,7 +1008,7 @@ class TestMesh(TimedTestCase):
         # first call: spawn Z
         p1 = Path(d) / "first.sp"
         p1.write_text(
-            f'"{ROOT}/lib/with-spco.sp" :require\n'
+            f'"{ROOT}/stdlib/with-spco.sp" :require\n'
             '"one" [Z] spco/$\n'
         )
         _, err, rc = run_spci(stdin=":bye\n",
@@ -1026,7 +1026,7 @@ class TestMesh(TimedTestCase):
         # second call: spco/$ should detect Z is dead (:alive false) and respawn
         p2 = Path(d) / "second.sp"
         p2.write_text(
-            f'"{ROOT}/lib/with-spco.sp" :require\n'
+            f'"{ROOT}/stdlib/with-spco.sp" :require\n'
             '"two" [Z] spco/$\n'
         )
         _, err, rc = run_spci(stdin=":bye\n",
@@ -1050,7 +1050,7 @@ class TestMesh(TimedTestCase):
         self.addCleanup(lambda: shutil.rmtree(d, ignore_errors=True))
         prog = Path(d) / "drv.sp"
         prog.write_text(
-            f'"{ROOT}/lib/with-spco.sp" :require\n'
+            f'"{ROOT}/stdlib/with-spco.sp" :require\n'
             '[ 21 21 + ] [W2] spco/$!\n'
         )
         _, err, rc = run_spci(stdin=":bye\n",
@@ -1070,7 +1070,7 @@ class TestMesh(TimedTestCase):
         self.addCleanup(lambda: shutil.rmtree(d, ignore_errors=True))
         prog = Path(d) / "drv.sp"
         prog.write_text(
-            f'"{ROOT}/lib/with-spco.sp" :require\n'
+            f'"{ROOT}/stdlib/with-spco.sp" :require\n'
             '"hi" [Y] via-spco\n'
         )
         out, err, rc = run_spci(

@@ -22,7 +22,7 @@ spcc: spcc.c
 spco/spco: spco/spco.sp spcc libspci.a spci.h
 	./spcc --as spco spco/spco.sp -o $@
 
-spcd/spcd: spcd/spcd.sp spcd/dep.sp lib/str.sp lib/log.sp lib/git.sp lib/fset.sp lib/fmap.sp spcc libspci.a spci.h
+spcd/spcd: spcd/spcd.sp spcd/dep.sp stdlib/str.sp stdlib/log.sp stdlib/git.sp stdlib/fset.sp stdlib/fmap.sp spcc libspci.a spci.h
 	./spcc --as spcd spcd/spcd.sp -o $@
 
 install: all

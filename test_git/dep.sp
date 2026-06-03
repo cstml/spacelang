@@ -1,2 +1,2 @@
-`../lib/str.sp` :require
-`../lib/git.sp` :require
+`../stdlib/str.sp` :require
+`../stdlib/git.sp` :require

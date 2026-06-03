@@ -2,7 +2,7 @@
 {                                              }
 { Run:  ./spci example/strings.sp              }
 
-"../lib/str.sp" :require
+"../stdlib/str.sp" :require
 
 { ----- C primitives ----- }
 
