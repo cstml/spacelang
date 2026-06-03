@@ -5,7 +5,7 @@ BINDIR  = $(PREFIX)/bin
 LIBDIR  = $(PREFIX)/lib
 INCDIR  = $(PREFIX)/include
 
-SPC_VERSION = 0.0.1
+SPC_VERSION = v0.0.1
 CFLAGS = -O2 -Wall -Wextra -Iinclude -DSPC_VERSION=\"$(SPC_VERSION)\"
 
 all: bin/spci bin/spcc bin/spco bin/spcd lib/libspci.a
@@ -13,16 +13,16 @@ all: bin/spci bin/spcc bin/spco bin/spcd lib/libspci.a
 bin lib build:
 	mkdir -p $@
 
-build/runtime.o: runtime.c include/spci.h | build
+build/runtime.o: runtime.c include/spci.h makefile | build
 	cc $(CFLAGS) -c -o $@ runtime.c
 
 lib/libspci.a: build/runtime.o | lib
 	ar rcs $@ $<
 
-bin/spci: build/runtime.o spci.c include/spci.h | bin
+bin/spci: build/runtime.o spci.c include/spci.h makefile | bin
 	cc $(CFLAGS) -o $@ spci.c build/runtime.o
 
-bin/spcc: spcc.c | bin
+bin/spcc: spcc.c makefile | bin
 	cc $(CFLAGS) -o $@ spcc.c
 
 bin/spco: spco/spco.sp bin/spcc lib/libspci.a include/spci.h | bin
