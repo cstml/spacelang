@@ -785,8 +785,8 @@ test/summary
         self.assertIn("FAIL: 1", stderr)
 
     def test_example_tests_sp(self):
-        """example/tests.sp runs end-to-end through spct."""
-        _, stderr, rc = self.spct(str(ROOT / "example/tests.sp"))
+        """example/tests_test.sp runs end-to-end through spct."""
+        _, stderr, rc = self.spct(str(ROOT / "example/tests_test.sp"))
         self.assertIn("PASS 1+2=3", stderr)
         self.assertIn("PASS 5*2=10", stderr)
         self.assertIn("PASS 3*4!=13", stderr)
@@ -798,17 +798,58 @@ test/summary
         self.assertIn("PASS: 7", stderr)
         self.assertIn("FAIL: 1", stderr)
 
+    def test_spct_dir_discovery(self):
+        """spct <dir> finds and runs all *_test.sp files under it (like `go test`)."""
+        a = self.write_sp("a_test.sp", """
+test/reset
+"alpha" test/heading
+1 1 + 2 "a-eq" test/eq
+test/summary
+""")
+        # nested dir to verify recursion
+        sub = Path(self.tmp) / "nested"
+        sub.mkdir()
+        b = sub / "b_test.sp"
+        b.write_text("""
+test/reset
+"beta" test/heading
+true "b-ok" test/assert
+test/summary
+""")
+        # a non-test file should be ignored
+        Path(self.tmp, "ignored.sp").write_text('"nope" .\n')
+
+        _, stderr, _ = self.spct(self.tmp)
+        self.assertIn("PASS a-eq", stderr)
+        self.assertIn("PASS b-ok", stderr)
+        self.assertNotIn("nope", stderr)
+
+    def test_spct_dot(self):
+        """spct . discovers *_test.sp under the current directory."""
+        self.write_sp("c_test.sp", """
+test/reset
+"gamma" test/heading
+3 3 "c-eq" test/eq
+test/summary
+""")
+        cwd = os.getcwd()
+        try:
+            os.chdir(self.tmp)
+            _, stderr, _ = self.spct(".")
+        finally:
+            os.chdir(cwd)
+        self.assertIn("PASS c-eq", stderr)
+        self.assertIn("ALL PASSED", stderr)
+
     def test_math_library_example(self):
-        """../sp-math/example/tests.sp runs all 53 math assertions."""
-        math_tests = Path(ROOT).parent / "sp-math" / "example" / "tests.sp"
+        """../sp-math/example/math_test.sp runs all 53 math assertions."""
+        math_tests = ROOT.parent / "sp-math" / "example" / "math_test.sp"
         if not math_tests.exists():
             self.skipTest("sp-math repo not found alongside spacelang")
-        # spct evals files via cat+eval, so :require resolves relative to CWD.
-        # Run from the sp-math directory so "math.sp" :require finds it.
         cwd = os.getcwd()
         try:
             os.chdir(str(math_tests.parent.parent))
-            _, stderr, rc = self.spct("example/tests.sp")
+            _, stderr, rc = self.spct("example/math_test.sp")
         finally:
             os.chdir(cwd)
         self.assertIn("ALL PASSED (53)", stderr)

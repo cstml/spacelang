@@ -26,5 +26,3 @@ false "false fails" test/assert       { deliberate failure — exercises FAIL }
 "hello" "world" str/cat "concat" test/str-eq
 
 test/summary
-
-:bye
