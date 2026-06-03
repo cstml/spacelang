@@ -5,7 +5,7 @@ BINDIR  = $(PREFIX)/bin
 LIBDIR  = $(PREFIX)/lib
 INCDIR  = $(PREFIX)/include
 
-SPC_VERSION = 0.1.0
+SPC_VERSION = 0.0.1
 CFLAGS = -O2 -Wall -Wextra -Iinclude -DSPC_VERSION=\"$(SPC_VERSION)\"
 
 all: bin/spci bin/spcc bin/spco bin/spcd lib/libspci.a
