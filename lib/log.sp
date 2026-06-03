@@ -1,4 +1,4 @@
-{ log/log.sp — logging library, built on /bin/echo via sh/!.            }
+{ lib/log.sp — logging library, built on /bin/echo via sh/!.            }
 {                                                                          }
 { Words:                                                                   }
 {   log/info   msg --      "[info] msg" to stderr                          }
@@ -10,7 +10,7 @@
 { All levels go to stderr so they stay out of the way of words that pipe   }
 { stdout via sh/>.                                                         }
 {                                                                          }
-{ Assumes str/str.sp is already loaded by the caller.                      }
+{ Assumes lib/str.sp is already loaded by the caller.                      }
 
 { log/_emit: prefix msg -- ; shell out `echo '<prefix><msg>' >&2`.
   Caller is responsible for keeping single-quotes out of the message. }

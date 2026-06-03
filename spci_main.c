@@ -14,6 +14,7 @@
 #include <poll.h>
 #include <sys/socket.h>
 #include <stdint.h>
+#include <libgen.h>
 
 #include "spci.h"
 
@@ -101,7 +102,12 @@ int main(int argc, char **argv) {
     if (nfiles > 0) {
         for (int i = 0; i < nfiles; i++) {
             char *src = slurp_file(files[i]);
+            char *path_dup = strdup(files[i]);
+            const char *prev = spc_source_dir;
+            spc_source_dir = dirname(path_dup);
             feed(src);
+            spc_source_dir = prev;
+            free(path_dup);
             free(src);
         }
         if (!my_name) return 0;

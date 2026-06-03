@@ -1,4 +1,4 @@
-{ fset/fset.sp — file-backed set of strings (one element per line).      }
+{ lib/fset.sp — file-backed set of strings (one element per line).      }
 {                                                                          }
 { Words:                                                                   }
 {   fset/new   path --              truncate (or create) path              }
@@ -7,7 +7,7 @@
 {                                                                          }
 { Like str/, helpers use named scratch bindings and are NOT reentrant.    }
 
-{ Assumes str/str.sp is already loaded by the caller. }
+{ Assumes lib/str.sp is already loaded by the caller. }
 
 
 [ { path -- }

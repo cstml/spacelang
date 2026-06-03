@@ -9,11 +9,7 @@
 {   spcd list            print lock.sp contents                            }
 {   spcd clean           rm -rf lib/                                       }
 
-`str/str.sp`   :require
-`log/log.sp`   :require
-`git/git.sp`   :require
-`fset/fset.sp` :require
-`fmap/fmap.sp` :require
+"dep.sp" :require
 
 
 { ===================================================================

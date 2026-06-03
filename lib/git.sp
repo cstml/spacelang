@@ -1,7 +1,7 @@
-{ git/git.sp — git utility library for spaceforth.                        }
+{ lib/git.sp — git utility library for spaceforth.                        }
 {                                                                          }
 { Words all prefixed git/ and use sh/! / sh/> / str/ under the hood.       }
-{ Requires: str/str.sp                                                     }
+{ Requires: lib/str.sp                                                     }
 {                                                                          }
 { Operations:                                                              }
 {   git/url-basename  url -- basename     last "/" segment, strip .git     }
@@ -16,7 +16,7 @@
 { with the function name (e.g. git/_ub-p). Like str/, they are NOT         }
 { reentrant — don't call git/ functions from within themselves.            }
 
-{ Assumes str/str.sp is already loaded by the caller. }
+{ Assumes lib/str.sp is already loaded by the caller. }
 
 
 { ===================================================================

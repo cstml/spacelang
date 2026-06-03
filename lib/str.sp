@@ -1,4 +1,4 @@
-{ str/str.sp -- string library, built on the str/ C primitives. }
+{ lib/str.sp -- string library, built on the str/ C primitives. }
 {                                                                    }
 { Provided by the runtime (in C):                                    }
 {   str/cat   a b -- a++b                                            }

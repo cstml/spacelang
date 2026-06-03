@@ -63,6 +63,12 @@ int  mesh_poll(int timeout_ms);  /* pump accept + peer fds */
 extern int          user_argc;
 extern char *const *user_argv;
 
+/* Directory used as a fallback when :require's path can't be opened
+ * relative to CWD. Drivers set this to dirname of the source file
+ * before calling feed(), so a script can `"dep.sp" :require` and find
+ * a sibling file regardless of CWD. NULL disables the fallback. */
+extern const char *spc_source_dir;
+
 /* --- evaluator entry point --- */
 void feed(const char *src);
 

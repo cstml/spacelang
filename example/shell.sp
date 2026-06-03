@@ -2,7 +2,7 @@
 {                                                                  }
 { Run:  ./spci example/shell.sp                                    }
 
-"str/str.sp" :require
+"../lib/str.sp" :require
 
 { ----- sh/! : run a command, push its exit status ----- }
 { Use when you care about success/failure and the side effect.    }

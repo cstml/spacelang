@@ -1,7 +1,6 @@
-{ Test suite for git/git.sp library — all local, no network }
+{ Test suite for lib/git.sp library — all local, no network }
 
-`str/str.sp` :require
-`git/git.sp` :require
+"dep.sp" :require
 
 { Clean up from prior runs }
 `rm -rf /tmp/spacelang_git_test/tmp_lib` sh/! drop

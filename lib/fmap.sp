@@ -1,4 +1,4 @@
-{ fmap/fmap.sp — file-backed string→string map.                          }
+{ lib/fmap.sp — file-backed string→string map.                          }
 {                                                                          }
 { On-disk format: one "key value" pair per line. Keys may not contain     }
 { whitespace; values are everything after the first space.                }
@@ -12,7 +12,7 @@
 {                                                                          }
 { Helpers use named scratch bindings; NOT reentrant.                       }
 
-{ Assumes str/str.sp is already loaded by the caller. }
+{ Assumes lib/str.sp is already loaded by the caller. }
 
 
 [ { path -- }

@@ -5,7 +5,7 @@ BINDIR  = $(PREFIX)/bin
 LIBDIR  = $(PREFIX)/lib
 INCDIR  = $(PREFIX)/include
 
-all: spci spcc spco spcd libspci.a
+all: spci spcc spco/spco spcd/spcd libspci.a
 
 spci.o: spci.c spci.h
 	cc -O2 -Wall -Wextra -c -o $@ spci.c
@@ -19,15 +19,15 @@ spci: spci.o spci_main.c spci.h
 spcc: spcc.c
 	cc -O2 -Wall -Wextra -o $@ spcc.c
 
-spco: spco.sp spcc libspci.a spci.h
-	./spcc --as spco spco.sp -o $@
+spco/spco: spco/spco.sp spcc libspci.a spci.h
+	./spcc --as spco spco/spco.sp -o $@
 
-spcd: spcd.sp spcc libspci.a spci.h
-	./spcc --as spcd spcd.sp -o $@
+spcd/spcd: spcd/spcd.sp spcd/dep.sp lib/str.sp lib/log.sp lib/git.sp lib/fset.sp lib/fmap.sp spcc libspci.a spci.h
+	./spcc --as spcd spcd/spcd.sp -o $@
 
 install: all
 	install -d $(DESTDIR)$(BINDIR) $(DESTDIR)$(LIBDIR) $(DESTDIR)$(INCDIR)
-	install -m 755 spci spcc spco spcd $(DESTDIR)$(BINDIR)
+	install -m 755 spci spcc spco/spco spcd/spcd $(DESTDIR)$(BINDIR)
 	install -m 644 libspci.a $(DESTDIR)$(LIBDIR)
 	install -m 644 spci.h $(DESTDIR)$(INCDIR)
 
@@ -37,7 +37,7 @@ uninstall:
 	      $(DESTDIR)$(LIBDIR)/libspci.a $(DESTDIR)$(INCDIR)/spci.h
 
 clean:
-	rm -f spci spcc spco spcd spci.o libspci.a
+	rm -f spci spcc spco/spco spcd/spcd spci.o libspci.a
 
 test:
 	python3 test_harness.py

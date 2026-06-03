@@ -398,6 +398,7 @@ static void pending_remove(uint32_t id) {
 
 /* forward decl: process one frame's payload through the interpreter */
 /* feed declared in spci.h */
+const char *spc_source_dir = NULL;
 
 /* dispatch a frame we just received */
 void on_frame(Peer *p, uint8_t tag, uint32_t id, char *payload, uint32_t len) {
@@ -1003,11 +1004,18 @@ static void eval_word(const char *w) {
         return;
     }
 
-    /* :require — pop a path string, load and evaluate that file */
+    /* :require — pop a path string, load and evaluate that file.
+     * Falls back to spc_source_dir for non-absolute paths so a script
+     * can require sibling files (e.g. "dep.sp") without depending on CWD. */
     if (!strcmp(w, ":require")) {
         Value *t = pop();
         if (t && t->type == V_STR) {
             FILE *f = fopen(t->as.str, "rb");
+            if (!f && spc_source_dir && t->as.str[0] != '/') {
+                char full[4096];
+                snprintf(full, sizeof full, "%s/%s", spc_source_dir, t->as.str);
+                f = fopen(full, "rb");
+            }
             if (f) {
                 fseek(f, 0, SEEK_END); long n = ftell(f); fseek(f, 0, SEEK_SET);
                 char *buf = malloc(n + 1);
