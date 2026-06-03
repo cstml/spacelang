@@ -142,7 +142,7 @@ class TestEval(TimedTestCase):
         out = self.eval("2 2 = .")
         self.assertIn("t", out)
         out = self.eval("3 2 = .")
-        self.assertIn("0", out)  # false → 0, not nil
+        self.assertIn("nil", out)  # false → nil
 
     def test_stack_ops(self):
         out = self.eval("1 2 swap . .")
@@ -154,12 +154,21 @@ class TestEval(TimedTestCase):
         self.assertNotIn("99", out)
 
     def test_if(self):
-        # if { else then cond → (cond ? then : else) }
-        # [else] [then] cond if  →  pushes then if cond truthy
-        out = self.eval("[else] [then] true if .")
-        self.assertIn("[then]", out)
-        out = self.eval("[else] [then] false if .")
-        self.assertIn("[else]", out)
+        # if: [else] [then] cond if  →  eagerly runs the selected thunk
+        out = self.eval("[99] [42] true if .")
+        self.assertIn("42", out)
+        out = self.eval("[99] [42] false if .")
+        self.assertIn("99", out)
+        out = self.eval("[99] [42] nil if .")
+        self.assertIn("99", out)
+        out = self.eval("[99] [42] 32 if .")
+        self.assertIn("42", out)
+        out = self.eval("[99] [42] 'asd' if .")
+        self.assertIn("42", out)
+        out = self.eval("[99] [42] '' if .")
+        self.assertIn("99", out)
+        out = self.eval("[99] [42] [] if .")
+        self.assertIn("99", out)
 
     def test_bind_and_eval(self):
         out = self.eval("[ 2 * ] [double] @  21 double ! .")
@@ -300,7 +309,7 @@ class TestEval(TimedTestCase):
     def test_exists_false(self):
         # Without --name/--bus, bus_dir is NULL → :exists is always false
         out = self.eval('"NoSuchPeer" :exists .')
-        self.assertIn("0", out)
+        self.assertIn("nil", out)
 
     def test_name_str_roundtrip(self):
         # name>str pulls the name out of a [X] form
@@ -370,7 +379,8 @@ class TestCompile(TimedTestCase):
         self.compile_and_compare("[ 2 * ] [double] @  21 double ! .", "")
 
     def test_if(self):
-        self.compile_and_compare("[yes] [no] true if .", "")
+        self.compile_and_compare("[99] [42] true if .", "")
+        self.compile_and_compare("[99] [42] false if .", "")
 
     def test_example_add2(self):
         # add_2.sp is interactive (slurp slurp +) — requires stdin typing.
@@ -447,16 +457,16 @@ class TestStr(TimedTestCase):
         out = self.eval('"foo" "foo" str/eq .')
         self.assertIn("t", out)
         out = self.eval('"foo" "bar" str/eq .')
-        # false prints as 0
-        self.assertIn("0", out)
+        # false prints as nil
+        self.assertIn("nil", out)
 
     # ----- library on top -----
 
     def test_empty(self):
         out = self.lib_eval('"" str/empty? . "x" str/empty? .')
-        # both results in stack order: t then 0
+        # both results in stack order: t then nil
         self.assertIn("t", out)
-        self.assertIn("0", out)
+        self.assertIn("nil", out)
 
     def test_head_tail(self):
         out = self.lib_eval('"hello" str/head .')
@@ -487,10 +497,10 @@ class TestStr(TimedTestCase):
         out = self.lib_eval('"hello" "hel" str/starts-with? .')
         self.assertIn("t", out)
         out = self.lib_eval('"hello" "ell" str/starts-with? .')
-        self.assertIn("0", out)
+        self.assertIn("nil", out)
         # prefix longer than s
         out = self.lib_eval('"hi" "hello" str/starts-with? .')
-        self.assertIn("0", out)
+        self.assertIn("nil", out)
         # empty prefix always matches
         out = self.lib_eval('"hello" "" str/starts-with? .')
         self.assertIn("t", out)
@@ -499,9 +509,9 @@ class TestStr(TimedTestCase):
         out = self.lib_eval('"hello" "llo" str/ends-with? .')
         self.assertIn("t", out)
         out = self.lib_eval('"hello" "hel" str/ends-with? .')
-        self.assertIn("0", out)
+        self.assertIn("nil", out)
         out = self.lib_eval('"hi" "hello" str/ends-with? .')
-        self.assertIn("0", out)
+        self.assertIn("nil", out)
         out = self.lib_eval('"hello" "" str/ends-with? .')
         self.assertIn("t", out)
 
@@ -509,7 +519,7 @@ class TestStr(TimedTestCase):
         out = self.lib_eval('"hello world" "world" str/contains? .')
         self.assertIn("t", out)
         out = self.lib_eval('"hello" "xyz" str/contains? .')
-        self.assertIn("0", out)
+        self.assertIn("nil", out)
         # match at start
         out = self.lib_eval('"hello" "hel" str/contains? .')
         self.assertIn("t", out)
@@ -716,6 +726,172 @@ class TestProperty(TimedTestCase):
             for seq, err in failures[:5]:
                 msg += f"  {' '.join(seq)}\n  → {err.strip()}\n"
             self.fail(msg)
+
+
+# ── spcd integration: package manager verbs against local bare repos ──
+
+SPCD   = str(ROOT / "spcd")
+FIXDIR = Path("/tmp/spacelang_git_test")
+
+
+class TestSpcd(unittest.TestCase):
+    """Integration tests for the compiled spcd binary.
+
+    Uses local bare git repos under /tmp/spacelang_git_test (no network).
+    test-repo.git is bootstrapped by test_git.sp and reused; dep-a, dep-b,
+    and binrepo are created on demand for transitive-dep and install
+    coverage. Each test runs in a fresh sandbox.
+    """
+
+    TIMEOUT = 30  # spcd install shells out to cc; needs headroom
+
+    @classmethod
+    def setUpClass(cls):
+        if not os.path.exists(SPCD):
+            raise unittest.SkipTest("spcd binary missing; run `make spcd` or "
+                                    "`./spcc --as spcd spcd.sp -o spcd`")
+        if not (FIXDIR / "test-repo.git").is_dir():
+            raise unittest.SkipTest(
+                f"{FIXDIR}/test-repo.git missing; run `spci test_git.sp` first")
+        cls._make_fixture_dep_a()
+        cls._make_fixture_dep_b()
+        cls._make_fixture_binrepo()
+
+    @staticmethod
+    def _git_init_and_bare(seed, bare):
+        subprocess.run(["git", "init", "-q", "-b", "master", str(seed)], check=True)
+        env = {**os.environ,
+               "GIT_AUTHOR_NAME": "t", "GIT_AUTHOR_EMAIL": "t@t",
+               "GIT_COMMITTER_NAME": "t", "GIT_COMMITTER_EMAIL": "t@t"}
+        subprocess.run(["git", "-C", str(seed), "add", "."], check=True)
+        subprocess.run(["git", "-C", str(seed), "commit", "-q", "-m", "seed"],
+                       check=True, env=env)
+        subprocess.run(["git", "clone", "-q", "--bare", str(seed), str(bare)],
+                       check=True)
+
+    @classmethod
+    def _make_fixture_dep_a(cls):
+        bare = FIXDIR / "dep-a.git"
+        if bare.is_dir(): return
+        seed = FIXDIR / "_seed-a"
+        shutil.rmtree(seed, ignore_errors=True)
+        seed.mkdir(parents=True)
+        (seed / "lib.sp").write_text("{ dep-a stub }\n")
+        cls._git_init_and_bare(seed, bare)
+        shutil.rmtree(seed, ignore_errors=True)
+
+    @classmethod
+    def _make_fixture_dep_b(cls):
+        bare = FIXDIR / "dep-b.git"
+        if bare.is_dir(): return
+        seed = FIXDIR / "_seed-b"
+        shutil.rmtree(seed, ignore_errors=True)
+        seed.mkdir(parents=True)
+        (seed / "lib.sp").write_text("{ dep-b stub }\n")
+        (seed / "deps.sp").write_text(f'"{FIXDIR}/dep-a.git" deps/head\n')
+        cls._git_init_and_bare(seed, bare)
+        shutil.rmtree(seed, ignore_errors=True)
+
+    @classmethod
+    def _make_fixture_binrepo(cls):
+        bare = FIXDIR / "binrepo.git"
+        if bare.is_dir(): return
+        seed = FIXDIR / "_seed-bin"
+        shutil.rmtree(seed, ignore_errors=True)
+        seed.mkdir(parents=True)
+        (seed / "main.sp").write_text('`hello from binrepo` :log\n')
+        cls._git_init_and_bare(seed, bare)
+        shutil.rmtree(seed, ignore_errors=True)
+
+    def setUp(self):
+        self.tmp = tempfile.mkdtemp(prefix="spcd-")
+        self._cwd = os.getcwd()
+        os.chdir(self.tmp)
+
+    def tearDown(self):
+        os.chdir(self._cwd)
+        shutil.rmtree(self.tmp, ignore_errors=True)
+
+    def spcd(self, *args, env=None, check=False):
+        full_env = {**os.environ, **(env or {})}
+        return subprocess.run(
+            [SPCD, *args], capture_output=True, text=True,
+            timeout=self.TIMEOUT, env=full_env, check=check)
+
+    # -- T1
+    def test_add_head(self):
+        self.spcd("add", str(FIXDIR / "test-repo.git"))
+        self.assertTrue(Path("deps.sp").is_file())
+        self.assertIn("deps/head", Path("deps.sp").read_text())
+        self.assertTrue(Path("lib/test-repo").is_dir())
+        self.assertIn("0c7e6d3d9794a92ede8dfa53040de810dd3f6e7a",
+                      Path("lib/lock.sp").read_text())
+
+    # -- T2
+    def test_list_prints_lock(self):
+        self.spcd("add", str(FIXDIR / "test-repo.git"))
+        r = self.spcd("list")
+        self.assertIn("0c7e6d3d9794a92ede8dfa53040de810dd3f6e7a", r.stdout + r.stderr)
+
+    # -- T3
+    def test_fetch_is_idempotent(self):
+        self.spcd("add", str(FIXDIR / "test-repo.git"))
+        before = Path("lib/lock.sp").read_text()
+        self.spcd("fetch")
+        self.assertEqual(before, Path("lib/lock.sp").read_text())
+
+    # -- T4
+    def test_clean(self):
+        self.spcd("add", str(FIXDIR / "test-repo.git"))
+        self.assertTrue(Path("lib").is_dir())
+        self.spcd("clean")
+        self.assertFalse(Path("lib").exists())
+
+    # -- T5
+    def test_add_branch_heuristic(self):
+        self.spcd("add", f"{FIXDIR}/test-repo.git@feature")
+        self.assertIn("deps/branch", Path("deps.sp").read_text())
+        self.assertIn("54c049cc2f66285604f32e8f75ec744f777465b0",
+                      Path("lib/lock.sp").read_text())
+
+    # -- T6
+    def test_add_sha_heuristic(self):
+        sha = "0c7e6d3d9794a92ede8dfa53040de810dd3f6e7a"
+        self.spcd("add", f"{FIXDIR}/test-repo.git@{sha}")
+        self.assertIn("deps/sha", Path("deps.sp").read_text())
+        self.assertIn(sha, Path("lib/lock.sp").read_text())
+
+    # -- T7
+    def test_transitive_deps(self):
+        self.spcd("add", str(FIXDIR / "dep-b.git"))
+        self.assertTrue(Path("lib/dep-b").is_dir(), "dep-b not cloned")
+        self.assertTrue(Path("lib/dep-a").is_dir(), "dep-a not cloned transitively")
+        lock = Path("lib/lock.sp").read_text()
+        self.assertIn("dep-b.git", lock)
+        self.assertIn("dep-a.git", lock)
+
+    # -- T8
+    def test_update_rewrites_lock(self):
+        self.spcd("add", str(FIXDIR / "test-repo.git"))
+        Path("lib/lock.sp").write_text("/tmp/fake fakesha\n")
+        self.spcd("update")
+        self.assertIn("0c7e6d3d9794a92ede8dfa53040de810dd3f6e7a",
+                      Path("lib/lock.sp").read_text())
+
+    # -- T9
+    def test_install_builds_and_runs(self):
+        bindir = Path(self.tmp) / "bin"
+        env = {
+            "SPACELANG_BIN":  str(bindir),
+            "SPACELANG_ROOT": str(ROOT),
+            "PATH":           f"{ROOT}:{os.environ.get('PATH', '')}",
+        }
+        self.spcd("install", str(FIXDIR / "binrepo.git"), env=env)
+        binary = bindir / "binrepo"
+        self.assertTrue(binary.is_file() and os.access(binary, os.X_OK),
+                        "installed binary missing or not executable")
+        r = subprocess.run([str(binary)], capture_output=True, text=True, timeout=4)
+        self.assertIn("hello from binrepo", r.stdout + r.stderr)
 
 
 # ── mesh tests: spco + spci nodes over Unix sockets ──────────────────
@@ -947,6 +1123,7 @@ if __name__ == "__main__":
         suite.addTests(loader.loadTestsFromTestCase(TestCompile))
         suite.addTests(loader.loadTestsFromTestCase(TestRequirePreprocess))
         suite.addTests(loader.loadTestsFromTestCase(TestProperty))
+        suite.addTests(loader.loadTestsFromTestCase(TestSpcd))
     elif args.tests:
         for name in args.tests:
             suite.addTests(loader.loadTestsFromName(name))
@@ -956,6 +1133,7 @@ if __name__ == "__main__":
         suite.addTests(loader.loadTestsFromTestCase(TestCompile))
         suite.addTests(loader.loadTestsFromTestCase(TestRequirePreprocess))
         suite.addTests(loader.loadTestsFromTestCase(TestProperty))
+        suite.addTests(loader.loadTestsFromTestCase(TestSpcd))
         suite.addTests(loader.loadTestsFromTestCase(TestMesh))
 
     runner = unittest.TextTestRunner(verbosity=2)

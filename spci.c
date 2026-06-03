@@ -653,7 +653,7 @@ static void bin_num(long (*f)(long,long)) {
 }
 static void bin_cmp(int (*f)(long,long)) {
     Value *b = pop(), *a = pop();
-    Value *r = f(n_of(a), n_of(b)) ? v_bool(1) : v_num(0);
+    Value *r = v_bool(f(n_of(a), n_of(b)));
     v_unref(a); v_unref(b);
     push(r);
 }
@@ -710,7 +710,7 @@ static void eval_word(const char *w) {
     /* if: cond [then] [else] if  -- eager. Pops else, then, cond and
        evaluates the selected thunk. */
     if (!strcmp(w,"if")) {
-        Value *el = pop(), *th = pop(), *c = pop();
+        Value *c = pop(), *th = pop(), *el = pop();
         Value *chosen = truthy(c) ? th : el;
         Value *discard = truthy(c) ? el : th;
         if (chosen && chosen->type == V_THUNK) { run_thunk(chosen); v_unref(chosen); }
@@ -851,7 +851,7 @@ static void eval_word(const char *w) {
         }
         int eq = !strcmp(a->as.str, b->as.str);
         v_unref(a); v_unref(b);
-        push(eq ? v_bool(1) : v_num(0));
+        push(v_bool(eq));
         return;
     }
 
@@ -1108,7 +1108,7 @@ static void eval_word(const char *w) {
             }
         }
         v_unref(v);
-        push(alive ? v_bool(1) : v_num(0));
+        push(v_bool(alive));
         return;
     }
 
@@ -1124,7 +1124,7 @@ static void eval_word(const char *w) {
             present = (stat(path, &st) == 0 && S_ISSOCK(st.st_mode));
         }
         v_unref(v);
-        push(present ? v_bool(1) : v_num(0));
+        push(v_bool(present));
         return;
     }
 
@@ -1165,13 +1165,13 @@ static void eval_word(const char *w) {
         if (!name) {
             fprintf(stderr, "%s expects [name] as destination\n", w);
             v_unref(binder); v_unref(term);
-            if (is_sync) push(v_num(0));
+            if (is_sync) push(v_bool(0));
             return;
         }
         if (!my_name) {
             fprintf(stderr, "%s: not in --name mode\n", w);
             v_unref(binder); v_unref(term);
-            if (is_sync) push(v_num(0));
+            if (is_sync) push(v_bool(0));
             return;
         }
         Peer *p = peer_find(name);
@@ -1179,7 +1179,7 @@ static void eval_word(const char *w) {
         if (!p) {
             fprintf(stderr, "%s: cannot reach peer '%s'\n", w, name);
             v_unref(binder); v_unref(term);
-            if (is_sync) push(v_num(0));
+            if (is_sync) push(v_bool(0));
             return;
         }
 
@@ -1217,7 +1217,7 @@ static void eval_word(const char *w) {
 
     /* literal keywords / commands */
     if (!strcmp(w,"true"))  { push(v_bool(1)); return; }
-    if (!strcmp(w,"false")) { push(v_num(0));  return; }
+    if (!strcmp(w,"false")) { push(v_bool(0)); return; }
     if (!strcmp(w,"nil"))   { push(v_num(0));  return; }
 
     /* otherwise: look up the binding. Auto-eval rule: if the bound value

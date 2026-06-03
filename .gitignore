@@ -2,6 +2,7 @@
 spci
 spcc
 spco
+spcd
 spci.o
 libspci.a
 __pycache__/

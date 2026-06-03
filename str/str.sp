@@ -35,7 +35,6 @@
 
 [
   dup str/empty?
-  [ { then: src empty } drop ]
   [ { else: src non-empty }
     dup 0 1 str/sub                  { acc src head }
     swap                             { acc head src }
@@ -46,6 +45,8 @@
     swap                             { (head++acc) tail }
     str/_rev-loop
   ]
+  [ { then: src empty } drop ]
+  rot
   if
 ] [str/_rev-loop] @
 
@@ -56,12 +57,13 @@
 
 [
   str/_rep-n 0 <=
-  [ { then: done } ]
   [ { else: still going }
     str/_rep-acc str/_rep-s str/cat [str/_rep-acc] @
     str/_rep-n 1 - [str/_rep-n] @
     str/_rep-loop
   ]
+  [ { then: done } ]
+  rot
   if
 ] [str/_rep-loop] @
 
@@ -81,11 +83,12 @@
   [str/_sw-s] @
   str/_sw-p str/len [str/_sw-plen] @
   str/_sw-s str/len str/_sw-plen <
-  [ { then: s too short } false ]
   [ { else: enough chars in s }
     str/_sw-s 0 str/_sw-plen str/sub
     str/_sw-p str/eq
   ]
+  [ { then: s too short } false ]
+  rot
   if
 ] [str/starts-with?] @
 
@@ -97,7 +100,6 @@
   [str/_ew-s] @
   str/_ew-p str/len [str/_ew-plen] @
   str/_ew-s str/len str/_ew-plen <
-  [ { then: s too short } false ]
   [ { else: enough chars in s }
     str/_ew-s
     str/_ew-s str/len str/_ew-plen -
@@ -105,6 +107,8 @@
     str/sub
     str/_ew-p str/eq
   ]
+  [ { then: s too short } false ]
+  rot
   if
 ] [str/ends-with?] @
 
@@ -113,19 +117,21 @@
 
 [
   str/_c-i str/_c-p str/len + str/_c-s str/len >
-  [ { then: out of bounds, done } ]
   [ { else: window in bounds }
     str/_c-s str/_c-i str/_c-p str/len str/sub
     str/_c-p str/eq
-    [ { then: match }
-      true [str/_c-result] @
-    ]
     [ { else: no match, advance i }
       str/_c-i 1 + [str/_c-i] @
       str/_c-loop
     ]
+    [ { then: match }
+      true [str/_c-result] @
+    ]
+    rot
     if
   ]
+  [ { then: out of bounds, done } ]
+  rot
   if
 ] [str/_c-loop] @
 
@@ -143,19 +149,21 @@
 
 [
   str/_idx-i str/_idx-p str/len + str/_idx-s str/len >
-  [ { then: out of bounds, done } ]
   [ { else: window in bounds }
     str/_idx-s str/_idx-i str/_idx-p str/len str/sub
     str/_idx-p str/eq
-    [ { then: record index }
-      str/_idx-i [str/_idx-result] @
-    ]
     [ { else: no match, advance i }
       str/_idx-i 1 + [str/_idx-i] @
       str/_idx-loop
     ]
+    [ { then: record index }
+      str/_idx-i [str/_idx-result] @
+    ]
+    rot
     if
   ]
+  [ { then: out of bounds, done } ]
+  rot
   if
 ] [str/_idx-loop] @
 
@@ -174,13 +182,15 @@
 [ { s -- s' }
   [str/_sn-s] @
   str/_sn-s str/empty?
-  [ str/_sn-s ]
   [
+    [ str/_sn-s ]
+    [ str/_sn-s 0 str/_sn-s str/len 1 - str/sub ]
     str/_sn-s str/_sn-s str/len 1 - 1 str/sub `
 ` str/eq
-    [ str/_sn-s 0 str/_sn-s str/len 1 - str/sub ]
-    [ str/_sn-s ]
+    rot
     if
   ]
+  [ str/_sn-s ]
+  rot
   if
 ] [str/strip-nl] @
