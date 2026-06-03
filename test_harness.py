@@ -231,6 +231,26 @@ class TestEval(TimedTestCase):
         # "a\nb\nc" → 5 bytes
         self.assertIn("5", out)
 
+    def test_example_shell(self):
+        """example/shell.sp exercises sh/!, sh/>, eval, and str/ helpers."""
+        sp = ROOT / "example/shell.sp"
+        out, err, rc = run_spci(args=[str(sp)], timeout=4)
+        self.assertEqual(rc, 0, f"spci failed:\n{err}")
+        # sh/! side-effect line went to stdout via echo
+        self.assertIn("--- sh/! prints to its own stdout ---", out)
+        # exit statuses: 0 for true, 256 (status << 8) for false
+        self.assertIn("0", out)
+        self.assertIn("256", out)
+        # sh/> captures
+        self.assertIn('"hello-from-capture"', out)
+        self.assertIn('"no-trailing-newline"', out)
+        # eval'd captured arithmetic
+        self.assertIn("42", out)
+        # str/ helpers composing with capture
+        self.assertIn('"1.2.3"', out)
+        # final boolean from str/starts-with?
+        self.assertIn("t", out)
+
     def test_sh_capture_composable(self):
         # The captured string flows into the rest of the language.
         out = self.eval('"echo 41" sh/> eval 1 + .')
