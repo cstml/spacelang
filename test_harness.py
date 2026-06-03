@@ -487,6 +487,23 @@ class TestStr(TimedTestCase):
         out = self.lib_eval('"hello" "" str/contains? .')
         self.assertIn("t", out)
 
+    def test_example_strings(self):
+        """example/strings.sp exercises every primitive and helper in str/."""
+        sp = ROOT / "example/strings.sp"
+        out, err, rc = run_spci(args=[str(sp)], timeout=4)
+        self.assertEqual(rc, 0, f"spci failed:\n{err}")
+        for expected in [
+            '"foobar"', "5",                       # cat, len
+            '"world"', '"bc"', '"ab"',             # sub (basic + clamps)
+            "65", '"A"',                           # ord, chr
+            '"gnalecaps"',                         # reverse
+            '"abababab"',                          # repeat
+            '"h"', '"ello"',                       # head, tail
+            "10", "-1",                            # index hit + miss
+            '"parse.sp"', '"parse"',               # compose: basename, drop-suffix
+        ]:
+            self.assertIn(expected, out, f"missing {expected!r} in output")
+
     def test_index(self):
         out = self.lib_eval('"hello world" "world" str/index .')
         self.assertIn("6", out)
