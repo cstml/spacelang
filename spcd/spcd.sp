@@ -65,6 +65,11 @@
     dlm-u dlm-s tmp-lock fmap/put
 ] ] [deps/_sha-lock] @
 
+{ deps/override is consumed by the resolver in spcc/spci (it reads deps.sp
+  directly via a tiny scanner). spcd just needs to swallow the two strings
+  so eval doesn't print 'unknown word'. }
+[ { local url -- } drop drop ] [deps/override] @
+
 [
   deps/_head-todo   [deps/head]   @
   deps/_branch-todo [deps/branch] @

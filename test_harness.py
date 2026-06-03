@@ -346,6 +346,21 @@ class TestEval(TimedTestCase):
         out = self.eval("{\n}\n9 .")
         self.assertIn("9", out)
 
+    def test_require_via_override(self):
+        """deps.sp override rewrites logical URLs to local paths."""
+        tmp = tempfile.mkdtemp(prefix="spc-ovr-")
+        try:
+            (Path(tmp) / "deps.sp").write_text(
+                '"." "github.com/test/proj" deps/override\n')
+            (Path(tmp) / "lib.sp").write_text('"<from-override>" .\n')
+            (Path(tmp) / "main.sp").write_text(
+                '"github.com/test/proj/lib.sp" :require\n')
+            out, err, rc = run_spci(args=[str(Path(tmp) / "main.sp")], timeout=3)
+            self.assertEqual(rc, 0, f"spci failed:\n{err}")
+            self.assertIn("<from-override>", out)
+        finally:
+            shutil.rmtree(tmp, ignore_errors=True)
+
 
 # ── compile tests: spcc produces correct binaries ─────────────────────
 

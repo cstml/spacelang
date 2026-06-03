@@ -46,6 +46,10 @@
 #include <sys/wait.h>
 
 #include "spci.h"
+#include "resolver.h"
+
+static SpcOverrides g_overrides = {0};
+static int g_overrides_loaded = 0;
 
 /* ---------- values ---------- */
 
@@ -1012,10 +1016,27 @@ static void eval_word(const char *w) {
     if (!strcmp(w, ":require")) {
         Value *t = pop();
         if (t && t->type == V_STR) {
+            /* Lazy-load deps.sp overrides on first require. */
+            if (!g_overrides_loaded) {
+                char root[PATH_MAX];
+                const char *seed = spc_source_dir ? spc_source_dir : ".";
+                if (spc_find_module_root(seed, root))
+                    spc_load_overrides(root, &g_overrides);
+                g_overrides_loaded = 1;
+            }
             char resolved[4096];
             resolved[0] = 0;
-            FILE *f = fopen(t->as.str, "rb");
-            if (f) snprintf(resolved, sizeof resolved, "%s", t->as.str);
+            FILE *f = NULL;
+            char *via_ovr = spc_resolve_via_overrides(t->as.str, &g_overrides);
+            if (via_ovr) {
+                snprintf(resolved, sizeof resolved, "%s", via_ovr);
+                f = fopen(resolved, "rb");
+                free(via_ovr);
+            }
+            if (!f) {
+                f = fopen(t->as.str, "rb");
+                if (f) snprintf(resolved, sizeof resolved, "%s", t->as.str);
+            }
             if (!f && spc_source_dir && t->as.str[0] != '/') {
                 snprintf(resolved, sizeof resolved, "%s/%s",
                          spc_source_dir, t->as.str);

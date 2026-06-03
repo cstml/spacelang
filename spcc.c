@@ -49,6 +49,11 @@
 #include <limits.h>
 #include <ctype.h>
 
+#include "resolver.h"
+
+static SpcOverrides g_overrides = {0};
+static int g_overrides_loaded = 0;
+
 static void die(const char *msg) {
     fprintf(stderr, "spcc: %s\n", msg);
     exit(1);
@@ -195,8 +200,15 @@ static void preprocess_buf(const char *path, const char *dir,
                     path, line);
                 exit(1);
             }
-            char *resolved = join_path(dir, last_string);
+            /* Lazy-load deps.sp overrides on first :require we see. */
+            if (!g_overrides_loaded) {
+                char root[PATH_MAX];
+                if (spc_find_module_root(dir, root)) spc_load_overrides(root, &g_overrides);
+                g_overrides_loaded = 1;
+            }
             char real[PATH_MAX];
+            char *via_ovr = spc_resolve_via_overrides(last_string, &g_overrides);
+            char *resolved = via_ovr ? via_ovr : join_path(dir, last_string);
             if (!realpath(resolved, real)) {
                 fprintf(stderr, "spcc: %s:%zu: :require cannot open '%s': %s\n",
                         path, last_string_line, last_string, strerror(errno));
