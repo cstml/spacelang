@@ -202,7 +202,7 @@ class TestEval(TimedTestCase):
             os.unlink(tmp)
 
     def test_cat(self):
-        out = self.eval('"foo" "bar" cat .')
+        out = self.eval('"foo" "bar" str/cat .')
         self.assertIn('"foobar"', out)
 
     def test_sleep(self):
@@ -321,6 +321,141 @@ class TestCompile(TimedTestCase):
         p = subprocess.run([bin_path], input="5\n", capture_output=True, text=True, timeout=4)
         self.assertEqual(p.returncode, 0)
         self.assertIn("1\n1\n2\n3\n5\n8", p.stdout)
+
+
+# ── str/ library: primitives + helpers built on them ─────────────────
+
+class TestStr(TimedTestCase):
+    """str/ C primitives and the spacelang library on top."""
+
+    def eval(self, code, preamble=""):
+        full = preamble + code + "\n:bye\n"
+        out, err, rc = run_spci(stdin=full)
+        self.assertEqual(rc, 0, f"spci crashed:\n{err}")
+        return out
+
+    def lib_eval(self, code):
+        return self.eval(code, preamble=f'"{ROOT}/str/str.sp" :require\n')
+
+    # ----- C primitives -----
+
+    def test_cat(self):
+        out = self.eval('"foo" "bar" str/cat .')
+        self.assertIn('"foobar"', out)
+
+    def test_len(self):
+        out = self.eval('"hello" str/len .')
+        self.assertIn("5", out)
+        out = self.eval('"" str/len .')
+        self.assertIn("0", out)
+
+    def test_sub_basic(self):
+        out = self.eval('"hello, world" 7 5 str/sub .')
+        self.assertIn('"world"', out)
+
+    def test_sub_bounds_clamp(self):
+        # over-length len clamps to remainder
+        out = self.eval('"abc" 1 100 str/sub .')
+        self.assertIn('"bc"', out)
+        # negative start clamps to 0
+        out = self.eval('"abc" -5 2 str/sub .')
+        self.assertIn('"ab"', out)
+        # start past end gives ""
+        out = self.eval('"abc" 99 3 str/sub .')
+        self.assertIn('""', out)
+
+    def test_ord_chr_roundtrip(self):
+        out = self.eval('"A" str/ord .')
+        self.assertIn("65", out)
+        out = self.eval('65 str/chr .')
+        self.assertIn('"A"', out)
+        out = self.eval('"" str/ord .')
+        self.assertIn("-1", out)
+
+    def test_eq(self):
+        out = self.eval('"foo" "foo" str/eq .')
+        self.assertIn("t", out)
+        out = self.eval('"foo" "bar" str/eq .')
+        # false prints as 0
+        self.assertIn("0", out)
+
+    # ----- library on top -----
+
+    def test_empty(self):
+        out = self.lib_eval('"" str/empty? . "x" str/empty? .')
+        # both results in stack order: t then 0
+        self.assertIn("t", out)
+        self.assertIn("0", out)
+
+    def test_head_tail(self):
+        out = self.lib_eval('"hello" str/head .')
+        self.assertIn('"h"', out)
+        out = self.lib_eval('"hello" str/tail .')
+        self.assertIn('"ello"', out)
+        # tail of single-char is ""
+        out = self.lib_eval('"x" str/tail .')
+        self.assertIn('""', out)
+
+    def test_reverse(self):
+        out = self.lib_eval('"abcdef" str/reverse .')
+        self.assertIn('"fedcba"', out)
+        out = self.lib_eval('"" str/reverse .')
+        self.assertIn('""', out)
+        out = self.lib_eval('"a" str/reverse .')
+        self.assertIn('"a"', out)
+
+    def test_repeat(self):
+        out = self.lib_eval('"ab" 3 str/repeat .')
+        self.assertIn('"ababab"', out)
+        out = self.lib_eval('"x" 0 str/repeat .')
+        self.assertIn('""', out)
+        out = self.lib_eval('"x" -2 str/repeat .')
+        self.assertIn('""', out)
+
+    def test_starts_with(self):
+        out = self.lib_eval('"hello" "hel" str/starts-with? .')
+        self.assertIn("t", out)
+        out = self.lib_eval('"hello" "ell" str/starts-with? .')
+        self.assertIn("0", out)
+        # prefix longer than s
+        out = self.lib_eval('"hi" "hello" str/starts-with? .')
+        self.assertIn("0", out)
+        # empty prefix always matches
+        out = self.lib_eval('"hello" "" str/starts-with? .')
+        self.assertIn("t", out)
+
+    def test_ends_with(self):
+        out = self.lib_eval('"hello" "llo" str/ends-with? .')
+        self.assertIn("t", out)
+        out = self.lib_eval('"hello" "hel" str/ends-with? .')
+        self.assertIn("0", out)
+        out = self.lib_eval('"hi" "hello" str/ends-with? .')
+        self.assertIn("0", out)
+        out = self.lib_eval('"hello" "" str/ends-with? .')
+        self.assertIn("t", out)
+
+    def test_contains(self):
+        out = self.lib_eval('"hello world" "world" str/contains? .')
+        self.assertIn("t", out)
+        out = self.lib_eval('"hello" "xyz" str/contains? .')
+        self.assertIn("0", out)
+        # match at start
+        out = self.lib_eval('"hello" "hel" str/contains? .')
+        self.assertIn("t", out)
+        # empty needle always matches
+        out = self.lib_eval('"hello" "" str/contains? .')
+        self.assertIn("t", out)
+
+    def test_index(self):
+        out = self.lib_eval('"hello world" "world" str/index .')
+        self.assertIn("6", out)
+        out = self.lib_eval('"hello world" "hello" str/index .')
+        self.assertIn("0", out)
+        out = self.lib_eval('"hello" "x" str/index .')
+        self.assertIn("-1", out)
+        # first occurrence wins
+        out = self.lib_eval('"abcabc" "c" str/index .')
+        self.assertIn("2", out)
 
 
 # ── :require preprocessor (spcc inlines required files) ──────────────
@@ -720,6 +855,7 @@ if __name__ == "__main__":
 
     if args.quick:
         suite.addTests(loader.loadTestsFromTestCase(TestEval))
+        suite.addTests(loader.loadTestsFromTestCase(TestStr))
         suite.addTests(loader.loadTestsFromTestCase(TestCompile))
         suite.addTests(loader.loadTestsFromTestCase(TestRequirePreprocess))
         suite.addTests(loader.loadTestsFromTestCase(TestProperty))
@@ -728,6 +864,7 @@ if __name__ == "__main__":
             suite.addTests(loader.loadTestsFromName(name))
     else:
         suite.addTests(loader.loadTestsFromTestCase(TestEval))
+        suite.addTests(loader.loadTestsFromTestCase(TestStr))
         suite.addTests(loader.loadTestsFromTestCase(TestCompile))
         suite.addTests(loader.loadTestsFromTestCase(TestRequirePreprocess))
         suite.addTests(loader.loadTestsFromTestCase(TestProperty))

@@ -727,12 +727,11 @@ static void eval_word(const char *w) {
         return;
     }
 
-    /* ! eval: pop top, evaluate it (thunk → run body; string → feed source) */
+    /* ! eval: pop top, evaluate it (thunk → run body; other → noop, leave as-is) */
     if (!strcmp(w,"!")) {
         Value *t = pop();
-        if (t && t->type == V_THUNK)      { run_thunk(t); v_unref(t); }
-        else if (t && t->type == V_STR)   { feed(t->as.str); v_unref(t); }
-        else                              { eval(t); }
+        if (t && t->type == V_THUNK) { run_thunk(t); v_unref(t); }
+        else                         { push(t); }   /* strings & values are inert under ! */
         return;
     }
 
@@ -757,11 +756,13 @@ static void eval_word(const char *w) {
         return;
     }
 
-    /* cat: pop two strings, push their concatenation */
-    if (!strcmp(w, "cat")) {
+    /* ---- str/ primitives ---- */
+
+    /* str/cat: a b -- a++b */
+    if (!strcmp(w, "str/cat")) {
         Value *b = pop(), *a = pop();
         if (!a || !b || a->type != V_STR || b->type != V_STR) {
-            fprintf(stderr, "cat: expected two strings\n");
+            fprintf(stderr, "str/cat: expected two strings\n");
             v_unref(a); v_unref(b); push(v_str("")); return;
         }
         size_t la = strlen(a->as.str), lb = strlen(b->as.str);
@@ -772,6 +773,77 @@ static void eval_word(const char *w) {
         Value *r = v_str(buf);
         free(buf); v_unref(a); v_unref(b);
         push(r); return;
+    }
+
+    /* str/len: s -- n  (byte length) */
+    if (!strcmp(w, "str/len")) {
+        Value *s = pop();
+        if (!s || s->type != V_STR) {
+            fprintf(stderr, "str/len: expected string\n");
+            v_unref(s); push(v_num(0)); return;
+        }
+        long n = (long)strlen(s->as.str);
+        v_unref(s); push(v_num(n)); return;
+    }
+
+    /* str/sub: s start len -- substring  (clamped to bounds) */
+    if (!strcmp(w, "str/sub")) {
+        Value *vlen = pop(), *vstart = pop(), *vs = pop();
+        if (!vs || vs->type != V_STR || !vstart || vstart->type != V_NUM ||
+            !vlen || vlen->type != V_NUM) {
+            fprintf(stderr, "str/sub: expected (string start len)\n");
+            v_unref(vs); v_unref(vstart); v_unref(vlen);
+            push(v_str("")); return;
+        }
+        long total = (long)strlen(vs->as.str);
+        long start = vstart->as.num;
+        long len   = vlen->as.num;
+        if (start < 0) start = 0;
+        if (start > total) start = total;
+        if (len < 0) len = 0;
+        if (start + len > total) len = total - start;
+        char *buf = malloc(len + 1);
+        memcpy(buf, vs->as.str + start, len);
+        buf[len] = 0;
+        Value *r = v_str(buf);
+        free(buf);
+        v_unref(vs); v_unref(vstart); v_unref(vlen);
+        push(r); return;
+    }
+
+    /* str/ord: s -- n  (first byte as unsigned 0..255; -1 for empty) */
+    if (!strcmp(w, "str/ord")) {
+        Value *s = pop();
+        if (!s || s->type != V_STR) {
+            fprintf(stderr, "str/ord: expected string\n");
+            v_unref(s); push(v_num(-1)); return;
+        }
+        long n = s->as.str[0] ? (long)(unsigned char)s->as.str[0] : -1;
+        v_unref(s); push(v_num(n)); return;
+    }
+
+    /* str/chr: n -- s  (single-byte string for n & 0xff) */
+    if (!strcmp(w, "str/chr")) {
+        Value *v = pop();
+        if (!v || v->type != V_NUM) {
+            fprintf(stderr, "str/chr: expected number\n");
+            v_unref(v); push(v_str("")); return;
+        }
+        char buf[2] = { (char)(unsigned char)(v->as.num & 0xff), 0 };
+        v_unref(v); push(v_str(buf)); return;
+    }
+
+    /* str/eq: a b -- bool */
+    if (!strcmp(w, "str/eq")) {
+        Value *b = pop(), *a = pop();
+        if (!a || !b || a->type != V_STR || b->type != V_STR) {
+            fprintf(stderr, "str/eq: expected two strings\n");
+            v_unref(a); v_unref(b); push(v_num(0)); return;
+        }
+        int eq = !strcmp(a->as.str, b->as.str);
+        v_unref(a); v_unref(b);
+        push(eq ? v_bool(1) : v_num(0));
+        return;
     }
 
     /* :sh — pop a string, run it via /bin/sh -c, push exit status */

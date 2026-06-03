@@ -11,10 +11,10 @@
 [
   dup [_n] @                  { stack ["X" "X"], @ pops [_n] then "X"; bind _n; stack ["X"] }
   :alive                      { pops "X", real connect-test; stack [cond] }
-  [ "[spco] spawn " _n cat :log
-    "./spci --serve --name " _n cat
-    " --bus " cat :bus cat
-    " &" cat
+  [ "[spco] spawn " _n str/cat :log
+    "./spci --serve --name " _n str/cat
+    " --bus " str/cat :bus str/cat
+    " &" str/cat
     :sh drop
     300 :sleep
   ]                            { el: ran when cond is nil (name missing) }

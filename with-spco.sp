@@ -11,17 +11,19 @@
 {                                                                     }
 { Example:  "with-spco.sp" :require    "hi" [B] spco/$                }
 
-{ Internal: build spco source text from a name --  "name" spawn-node  }
+{ Internal: name -- thunk that pushes the name string then calls      }
+{ spawn-node. We build the source as text, then `eval` parses it into }
+{ a thunk value (so the receiver gets a runnable thunk via EVAL).     }
 [
-  '"' swap cat '" spawn-node' cat
+  '[ "' swap str/cat '" spawn-node ]' str/cat eval
 ] [_spco-src] @
 
-{ Internal: ask spco to ensure [name] is up, then briefly sleep.       }
+{ Internal: ask spco to ensure [name] is up, then briefly sleep.      }
 { Stack effect: [name] -- [name]  (consumes net 0; [name] preserved)  }
 [
   dup name>str         { [name] "name" }
-  _spco-src            { [name] '"name" spawn-node'  -- auto-evals _spco-src }
-  "spco" $!            { [name] -- (EVAL sent)                         }
+  _spco-src            { [name] thunk }
+  "spco" $!            { [name] -- (EVAL sent) }
   500 :sleep
 ] [_spco-ensure] @
 
