@@ -7,7 +7,7 @@
  *   dup swap drop if
  *   @ (bind)   ! (eval)   . (print)   , (format)   ~ (describe)
  *   slurp (read line from stdin → string)   eval (pop string → feed)
- *   cat (string concat)   :sh (shell out)   :sleep (ms)   :exists (peer?)
+ *   sh/! (shell out, exit status)   sh/> (capture stdout)   :sleep (ms)   :exists (peer?)
  *   :bus (push current bus dir)   :require (load + feed file)   rot
  *   :log (pop string → stderr line)   :alive (real connect test)
  *   name>str ([X] → "X")   str>name ("X" → [X])
@@ -846,29 +846,29 @@ static void eval_word(const char *w) {
         return;
     }
 
-    /* :sh — pop a string, run it via /bin/sh -c, push exit status */
-    if (!strcmp(w, ":sh")) {
+    /* sh/! — pop a string, run it via /bin/sh -c, push exit status */
+    if (!strcmp(w, "sh/!")) {
         Value *t = pop();
         int rc = -1;
         if (t && t->type == V_STR) rc = system(t->as.str);
-        else fprintf(stderr, ":sh: expected string\n");
+        else fprintf(stderr, "sh/!: expected string\n");
         v_unref(t);
         push(v_num(rc));
         return;
     }
 
-    /* :sh> — pop a string, run via /bin/sh -c, push captured stdout
+    /* sh/> — pop a string, run via /bin/sh -c, push captured stdout
      * as a string. One trailing newline is stripped (matches $(...)).
      * Stderr passes through to the parent. */
-    if (!strcmp(w, ":sh>")) {
+    if (!strcmp(w, "sh/>")) {
         Value *t = pop();
         if (!t || t->type != V_STR) {
-            fprintf(stderr, ":sh>: expected string\n");
+            fprintf(stderr, "sh/>: expected string\n");
             v_unref(t); push(v_str("")); return;
         }
         FILE *p = popen(t->as.str, "r");
         if (!p) {
-            fprintf(stderr, ":sh>: popen failed: %s\n", strerror(errno));
+            fprintf(stderr, "sh/>: popen failed: %s\n", strerror(errno));
             v_unref(t); push(v_str("")); return;
         }
         size_t cap = 256, len = 0;

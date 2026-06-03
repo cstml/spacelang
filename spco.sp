@@ -15,7 +15,7 @@
     "./spci --serve --name " _n str/cat
     " --bus " str/cat :bus str/cat
     " &" str/cat
-    :sh drop
+    sh/! drop
     300 :sleep
   ]                            { el: ran when cond is nil (name missing) }
   [ ]                          { th: ran when cond is t (name exists)    }
