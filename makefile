@@ -13,7 +13,7 @@ all: bin/spci bin/spcc bin/spco bin/spcd lib/libspci.a
 bin lib build:
 	mkdir -p $@
 
-build/runtime.o: runtime.c include/spci.h makefile | build
+build/runtime.o: runtime.c include/spci.h include/resolver.h makefile | build
 	cc $(CFLAGS) -c -o $@ runtime.c
 
 lib/libspci.a: build/runtime.o | lib
@@ -22,7 +22,7 @@ lib/libspci.a: build/runtime.o | lib
 bin/spci: build/runtime.o spci.c include/spci.h makefile | bin
 	cc $(CFLAGS) -o $@ spci.c build/runtime.o
 
-bin/spcc: spcc.c makefile | bin
+bin/spcc: spcc.c include/resolver.h makefile | bin
 	cc $(CFLAGS) -o $@ spcc.c
 
 bin/spco: spco/spco.sp bin/spcc lib/libspci.a include/spci.h | bin

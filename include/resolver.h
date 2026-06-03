@@ -125,6 +125,77 @@ static void spc_load_overrides(const char *root_dir, SpcOverrides *o) {
     }
     free(strs[0]); free(strs[1]);
     free(src);
+
+    /* Also parse lock.sp for implicit spcd_lib overrides.
+     * Each "url" "sha" deps/sha entry generates an override:
+     *   url → spcd_lib/<basename>/
+     * This lets :require find deps downloaded by `spcd fetch`
+     * without needing manual deps/override lines in deps.sp. */
+    {
+        char lpath[PATH_MAX];
+        snprintf(lpath, sizeof lpath, "%s/lock.sp", root_dir);
+        FILE *lf = fopen(lpath, "rb");
+        if (lf) {
+            fseek(lf, 0, SEEK_END);
+            long ln = ftell(lf);
+            fseek(lf, 0, SEEK_SET);
+            char *lsrc = malloc(ln + 1);
+            if (fread(lsrc, 1, ln, lf) == (size_t)ln || 1) { /* tolerate */ }
+            lsrc[ln] = 0;
+            fclose(lf);
+
+            char *lstrs[2] = { NULL, NULL };
+            long li = 0;
+            while (li < ln) {
+                char c = lsrc[li];
+                if (c == '{') {
+                    while (li < ln && lsrc[li] != '}') li++;
+                    if (li < ln) li++;
+                    continue;
+                }
+                if (c == '"' || c == '\'' || c == '`') {
+                    char q = c;
+                    long start = ++li;
+                    while (li < ln && lsrc[li] != q) li++;
+                    char *s = malloc(li - start + 1);
+                    memcpy(s, lsrc + start, li - start);
+                    s[li - start] = 0;
+                    free(lstrs[0]); lstrs[0] = lstrs[1]; lstrs[1] = s;
+                    if (li < ln) li++;
+                    continue;
+                }
+                if (isspace((unsigned char)c) || c == '[' || c == ']') { li++; continue; }
+                long start = li;
+                while (li < ln) {
+                    unsigned char wc = lsrc[li];
+                    if (isspace(wc) || wc == '[' || wc == ']' || wc == '{'
+                        || wc == '"' || wc == '\'' || wc == '`') break;
+                    li++;
+                }
+                long wlen = li - start;
+                if (wlen == 8 && !memcmp(lsrc + start, "deps/sha", 8) && lstrs[0]) {
+                    /* lstrs[0] = URL, lstrs[1] = SHA. Build implicit override. */
+                    const char *url = lstrs[0];
+                    const char *bn = strrchr(url, '/');
+                    bn = bn ? bn + 1 : url;
+                    /* local = spcd_lib/<basename> (relative to root_dir) */
+                    size_t llen = 9 /* spcd_lib/ */ + strlen(bn);
+                    char *local = malloc(llen + 1);
+                    snprintf(local, llen + 1, "spcd_lib/%s", bn);
+
+                    if (o->n == cap) {
+                        cap = cap ? cap * 2 : 4;
+                        o->items = realloc(o->items, cap * sizeof *o->items);
+                    }
+                    o->items[o->n].local = local;
+                    o->items[o->n].url   = strdup(url);
+                    o->n++;
+                }
+            }
+            free(lstrs[0]); free(lstrs[1]);
+            free(lsrc);
+        }
+    }
 }
 
 static void spc_free_overrides(SpcOverrides *o) {
