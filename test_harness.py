@@ -798,6 +798,21 @@ test/summary
         self.assertIn("PASS: 7", stderr)
         self.assertIn("FAIL: 1", stderr)
 
+    def test_math_library_example(self):
+        """../sp-math/example/tests.sp runs all 53 math assertions."""
+        math_tests = Path(ROOT).parent / "sp-math" / "example" / "tests.sp"
+        if not math_tests.exists():
+            self.skipTest("sp-math repo not found alongside spacelang")
+        # spct evals files via cat+eval, so :require resolves relative to CWD.
+        # Run from the sp-math directory so "math.sp" :require finds it.
+        cwd = os.getcwd()
+        try:
+            os.chdir(str(math_tests.parent.parent))
+            _, stderr, rc = self.spct("example/tests.sp")
+        finally:
+            os.chdir(cwd)
+        self.assertIn("ALL PASSED (53)", stderr)
+
     # ── test.sp words via spci REPL ──
 
     def lib_eval(self, code):
