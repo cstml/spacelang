@@ -1,10 +1,21 @@
-# spacelang
+# spaceforth
 
-A concatenative, stack-based language with mesh transport.
+A small **Forth** with mesh primitives. Stack machine, words, quotations
+(`[ ... ]`) — straight Forth lineage; the novel part is that
+**identity and peer messaging are baked into the kernel**: any node
+can bind a name, address another by `[Name]`, and send values over
+Unix domain sockets with `$ / $! / $?`. Discovery is a stateless
+broker (`spco`) that just checks the filesystem.
+
+The project name in source is still `spacelang` (env vars, bus dir, `.sp`
+extension); only the framing here is updated. Treat "spaceforth" as the
+honest description of what it is and "spacelang" as the historical name
+used in code paths and tooling.
+
 Written in C. Ships as three binaries plus a runtime library:
 
 - **`spci`** — interactive interpreter (REPL + file mode + mesh node).
-- **`spcc`** — compiler: turns a `.sp` file into a standalone native binary.
+- **`spcc`** — compiler: turns a `.sp` source into a standalone native binary.
 - **`spco`** — discovery broker: answers LOOKUP by checking `$BUS/<name>.sock` on disk.
 - **`libspci.a`** + **`spci.h`** — the runtime, linked into programs `spcc` produces.
 
@@ -21,30 +32,45 @@ Requires a C compiler (`cc`) and `ar`. Tests require Python 3.
 
 ## Files
 
-| File           | Role                                                                          |
-|----------------|-------------------------------------------------------------------------------|
-| `spci.h`       | Public surface of the runtime: mesh state, peer table, `feed()`, mesh I/O.    |
-| `spci.c`       | Definitions: values, stack, dict, parser, builtins, frame I/O, mesh polling.  |
-| `spci_main.c`  | Driver for the interactive `spci` binary: argv parsing + REPL/event loop.     |
-| `spcc.c`       | The compiler: emits a small `.c` and links it against `libspci.a`.            |
-| `spco.c`       | Discovery broker: answers LOOKUP by checking the filesystem for .sock files.  |
-| `test_harness.py` | Test suite: unit, compile, property, and mesh integration tests.            |
-| `libspci.a`    | Archive of `spci.o`; what `spcc`-produced binaries link against.              |
+| File              | Role                                                                          |
+|-------------------|-------------------------------------------------------------------------------|
+| `spci.h`          | Public surface of the runtime: mesh state, peer table, `feed()`, mesh I/O.    |
+| `spci.c`          | Definitions: values, stack, dict, parser, builtins, frame I/O, mesh polling.  |
+| `spci_main.c`     | Driver for the interactive `spci` binary: argv parsing + REPL/event loop.     |
+| `spcc.c`          | The compiler: emits a small `.c` and links it against `libspci.a`.            |
+| `spco.sp`         | Discovery broker, written in spaceforth itself and compiled with `spcc`.      |
+| `with-spco.sp`    | Helper lib: spco-aware variants of `$ / $! / $?`.                             |
+| `str/str.sp`      | String library built on the `str/` C primitives.                              |
+| `test_harness.py` | Test suite: unit, compile, property, and mesh integration tests.              |
+| `libspci.a`       | Archive of `spci.o`; what `spcc`-produced binaries link against.              |
 
 ## Language reference
+
+### Lineage
+
+Standard Forth shape with one common modern extension: **quotations**
+(`[ ... ]`), the same construct Factor calls quotations and gforth
+spells `[: ... ;]`. Binding form is `value [name] @` (rather than
+`: name value ;`). Words bound to thunks **auto-evaluate** on reference
+— you don't write `name !` to invoke them, just `name`. `!` is reserved
+for explicitly evaluating a thunk that's on the stack.
+
+If you know Forth, the only things you have to learn are the binding
+syntax, the auto-eval rule, and the mesh ops.
 
 ### Values
 
 Numbers (`42`, `-7`), strings (`"hi"` or `'hi'`), words (`foo`), booleans
-(`true`, `false`, `nil`), and thunks (`[ ... ]`). Comments are
-`{ like this }`.
+(`true`, `false`), and thunks (`[ ... ]`). `nil` is an alias for the
+falsy num `0`. Comments are `{ like this }` (non-nesting — a `{` inside
+a comment closes it early).
 
 ### Builtins
 
 **Arithmetic / comparison** — pop two, push result:
 ```
 +  -  *  /         { numeric }
-<  >  <=  >=  =    { → t / nil }
+<  >  <=  >=  =    { → t / 0 }
 ```
 
 **Stack:**
@@ -52,19 +78,27 @@ Numbers (`42`, `-7`), strings (`"hi"` or `'hi'`), words (`foo`), booleans
 dup   { x → x x }
 swap  { x y → y x }
 drop  { x → }
+rot   { a b c → b c a }
 ```
 
 **Control:**
 ```
-if    { else then cond → (cond ? then : else) }
+if    { [else] [then] cond → pushes [then] if cond is truthy, else [else] }
 ```
+
+After `if` you typically write `!` to evaluate the chosen thunk:
+`[else-body] [then-body] cond if !`.
 
 **Binding & eval:**
 ```
 @     { value [name] → bind name = value }
-!     { thunk → evaluate it }
+!     { thunk → run it; non-thunk → no-op, leave as-is }
 ~     { [name] → print "name ~ <value>" }
 ```
+
+Auto-eval rule: referencing a name bound to a thunk runs the thunk
+right away. To push a thunk as data, bind it double-wrapped:
+`[ [ body ] ] [name] @`, then `name` pushes `[ body ]`.
 
 **I/O:**
 ```
@@ -74,41 +108,77 @@ slurp { → read a line from stdin, push as string (newline stripped) }
 eval  { string → feed it to the interpreter }
 ```
 
-`slurp eval` is the dynamic-load idiom — read a line of spacelang
-source and execute it.
+`slurp eval` is the dynamic-load idiom — read a line of source and run it.
 
 **Mesh (only meaningful with `--name`/`SPACELANG_NAME` set):**
 ```
 $   { value [peer] → send PUSH, fire-and-forget }
-$!  { value [peer] → send EVAL, fire-and-forget }
-$?  { value [peer] timeout-ms → send + wait; push t on ack, nil on timeout }
+$!  { value [peer] → send EVAL, fire-and-forget (usually a thunk) }
+$?  { value [peer] timeout-ms → send + wait; push t on ack, 0 on timeout }
+```
+
+Sender renders the value, receiver parses it back. For `$!`, send a
+thunk so the receiver's `!` step runs it. `with-spco.sp` provides
+`spco/$ / spco/$! / spco/$?` variants that first ask `spco` to ensure
+the peer is up.
+
+**Shell-out:**
+```
+sh/!   { "cmd" → run via /bin/sh -c, push exit status (stdout passes through) }
+sh/>   { "cmd" → run, push captured stdout (single trailing \n stripped) }
+sh/|   { "input" "cmd" → pipe input into stdin, push exit status }
+sh/|>  { "input" "cmd" → pipe input into stdin, push captured stdout }
+```
+
+**Strings** (C primitives; the `str/` library adds helpers on top):
+```
+str/cat str/len str/sub str/ord str/chr str/eq
+```
+
+After `"str/str.sp" :require` you also get:
+```
+str/empty?  str/head  str/tail
+str/reverse str/repeat
+str/starts-with?  str/ends-with?
+str/contains?  str/index
 ```
 
 **Keywords:**
 ```
-:s    { print the stack }
-:bye  { exit 0 }
+:s        { print the stack }
+:bye      { exit 0 }
+:sleep    { n → sleep n milliseconds }
+:require  { "path" → load and feed file at path }
+:exists   { "name" → is there a mesh peer with that name? }
+:bus      { → push current bus dir }
+:log      { x → print to stderr }
 ```
 
 ### Idioms
 
 ```
 [ dup + ] [double] @       { bind a function }
-21 double ! .              { → 42 }
+21 double .                { → 42  (auto-eval; no ! needed) }
 
 [ 1 + ] [inc] @
-0 inc ! inc ! inc ! .      { → 3 }
+0 inc inc inc .            { → 3 }
 
 slurp eval                 { one REPL step }
 [ slurp eval ] [step] @
-step ! step ! step !       { read & execute 3 lines from stdin }
+step step step             { read & execute 3 lines from stdin }
+```
+
+`if`-driven branching uses `!` because `if` selects a thunk:
+
+```
+[ "no" . ] [ "yes" . ] true if !    { → yes }
 ```
 
 ## Running `spci`
 
 ```sh
-./spci                      # REPL
-./spci program.sp           # batch mode (run file, exit)
+./spci                                           # REPL
+./spci program.sp                                # batch mode (run file, exit)
 ./spci --name A --bus /tmp/spacelang             # mesh node, REPL on stdin
 ./spci --name A --bus /tmp/spacelang program.sp  # mesh node, run file, exit
 ./spci --name A --bus /tmp/spacelang --serve program.sp  # run file, stay alive
@@ -130,7 +200,13 @@ protocol details.
 ./spcc --debug program.sp -o program   # -g -O0, implies --keep-c (for gdb)
 ./spcc --cc gcc program.sp -o program  # override compiler (default: $CC or cc)
 ./spcc --root DIR program.sp -o program  # override runtime lookup
+./spcc --as NAME program.sp -o NAME    # bake NAME as default --name
 ```
+
+`spcc` statically inlines `:require`d files at compile time, so the
+output binary has no runtime dependency on the `.sp` library files —
+you can delete them after building. Cycle-safe (each file is inlined
+at most once).
 
 ### How `spcc` finds the runtime
 
@@ -194,25 +270,28 @@ back to the runtime source.
 
 ```sh
 make
-make test              # all tests (unit + compile + mesh + property)
+make test              # all tests (unit + compile + str + mesh + property)
 make test-quick        # skip mesh tests (faster)
 python3 test_harness.py --seed 42    # repeatable property test seed
 ```
 
-Four test classes:
+Test classes:
 
-| Class           | What it covers                                    |
-|-----------------|---------------------------------------------------|
-| `TestEval`      | Language semantics via spci REPL                  |
-| `TestCompile`   | spcc binary matches spci output byte-for-byte     |
-| `TestProperty`  | 200 random balanced programs → no segfaults       |
-| `TestMesh`      | spco + spci nodes over real Unix sockets          |
+| Class                   | What it covers                                              |
+|-------------------------|-------------------------------------------------------------|
+| `TestEval`              | Language semantics + shell-out via `spci` REPL              |
+| `TestStr`               | `str/` primitives and the spaceforth library on top         |
+| `TestCompile`           | `spcc` binary matches `spci` output byte-for-byte           |
+| `TestRequirePreprocess` | `spcc` statically inlines `:require`d files                 |
+| `TestProperty`          | 200 random balanced programs → no segfaults                 |
+| `TestMesh`              | `spco` + `spci` nodes over real Unix sockets                |
 
 ## Mesh discovery with `spco`
 
 `spco` is a stateless discovery broker. It answers LOOKUP by checking
 whether `$BUS/<name>.sock` exists on the filesystem. No spawning, no
-lifecycle, no child management — just filesystem checks.
+lifecycle, no child management — just filesystem checks. It is itself
+written in spaceforth (`spco.sp`) and compiled with `spcc`.
 
 ### How it works
 
@@ -245,5 +324,19 @@ etc.) and bind their sockets under the bus directory.
 t
 ```
 
-The design rationale is in
+## Relation to other Forths
+
+The stack-language core is conventional Forth. Quotations (`[ ... ]`) are
+the Factor/gforth-`[:...;]` idiom. The `:require`-with-static-inline trick
+is closest to **lbForth** (source-to-C, single binary). `spcc`'s
+distribution model — compiler + headers + runtime archive sitting next to
+each other — is the gcc shape.
+
+What's not from Forth: the mesh primitives (`$ / $! / $?`), the
+filesystem-based discovery in `spco`, the `with-spco.sp` ensure-then-send
+helper, and the on-demand `spawn-node` flow. If you ported the project
+to **Factor**, the kernel work would shrink dramatically and the mesh
+layer would still be the interesting part.
+
+The design rationale for `spcc` is in
 `docs/superpowers/specs/2026-06-02-spcc-c-compiler-design.md`.
