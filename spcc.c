@@ -151,7 +151,7 @@ static void preprocess_buf(const char *path, const char *dir,
             continue;
         }
         /* strings */
-        if (c == '"' || c == '\'') {
+        if (c == '"' || c == '\'' || c == '`') {
             char q = c;
             size_t start = i++;
             size_t str_line = line;
@@ -183,7 +183,7 @@ static void preprocess_buf(const char *path, const char *dir,
         size_t start = i;
         while (i < n) {
             unsigned char wc = (unsigned char)src[i];
-            if (isspace(wc) || wc == '[' || wc == ']' || wc == '{' || wc == '"' || wc == '\'') break;
+            if (isspace(wc) || wc == '[' || wc == ']' || wc == '{' || wc == '"' || wc == '\'' || wc == '`') break;
             i++;
         }
         size_t wlen = i - start;
@@ -290,11 +290,20 @@ static void emit(FILE *out, const char *sp_src, size_t sp_len, const char *bake_
         "    if (env_name) my_name = strdup(env_name);\n"
         "    if (env_bus)  bus_dir = strdup(env_bus);\n"
         "    int keep_alive = 0;\n"
+        "    /* Collect non-runtime args into user_argv so spaceforth can\n"
+        "     * read them via :argc / :argv. Runtime flags --name/--bus/\n"
+        "     * --serve are consumed here and excluded. */\n"
+        "    char **uargv = malloc(sizeof(char*) * (argc + 1));\n"
+        "    int uargc = 0;\n"
         "    for (int i = 1; i < argc; i++) {\n"
         "        if (!strcmp(argv[i], \"--name\") && i+1<argc) my_name = argv[++i];\n"
         "        else if (!strcmp(argv[i], \"--bus\") && i+1<argc) bus_dir = argv[++i];\n"
         "        else if (!strcmp(argv[i], \"--serve\")) keep_alive = 1;\n"
+        "        else uargv[uargc++] = argv[i];\n"
         "    }\n"
+        "    uargv[uargc] = NULL;\n"
+        "    user_argc = uargc;\n"
+        "    user_argv = (char *const *)uargv;\n"
         "    if (my_name && !bus_dir) bus_dir = (char*)\"/tmp/spacelang\";\n"
         "    if (my_name) { if (mesh_listen() < 0) return 1; }\n"
         "    feed(SP_SOURCE);\n"

@@ -55,6 +55,14 @@ void on_frame(Peer *p, uint8_t tag, uint32_t id,
 int  mesh_listen(void);          /* bind $BUS/$NAME.sock; needs my_name+bus_dir */
 int  mesh_poll(int timeout_ms);  /* pump accept + peer fds */
 
+/* --- program argv (accessed from spaceforth via :argc / :argv) ---
+ * Driver sets these before calling feed(). user_args is the slice of
+ * argv after runtime-consumed flags (--name, --bus, --serve, the
+ * program path). user_argv[0] is the first positional arg, not the
+ * binary name. */
+extern int          user_argc;
+extern char *const *user_argv;
+
 /* --- evaluator entry point --- */
 void feed(const char *src);
 

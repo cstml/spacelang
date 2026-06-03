@@ -227,11 +227,12 @@ static void format_value(SBuf *s, Value *v) {
         case V_BOOL: sb_puts(s, v->as.boolean ? "true" : "false"); break;
         case V_STR: {
             /* Pick a quote the content doesn't contain so the formatted
-             * form round-trips through the parser (which accepts both
-             * "..." and '...'). */
+             * form round-trips through the parser, which accepts "..."
+             * '...' and `...`. Preference: " > ' > `. */
             int has_d = strchr(v->as.str, '"')  != NULL;
             int has_s = strchr(v->as.str, '\'') != NULL;
-            char q = (has_d && !has_s) ? '\'' : '"';
+            int has_b = strchr(v->as.str, '`')  != NULL;
+            char q = !has_d ? '"' : (!has_s ? '\'' : (!has_b ? '`' : '"'));
             sb_putc(s, q); sb_puts(s, v->as.str); sb_putc(s, q);
             break;
         }
@@ -299,6 +300,9 @@ int frame_read(int fd, uint8_t *tag, uint32_t *id, char **payload, uint32_t *len
 char  *my_name = NULL;
 char  *bus_dir = NULL;
 int    listen_fd = -1;
+
+int           user_argc = 0;
+char *const  *user_argv = NULL;
 
 /* Peer typedef now in spci.h */
 
@@ -545,7 +549,7 @@ static Value *parse_term(Lex *L) {
     char c = L->src[L->i];
 
     if (c == '[') return parse_thunk(L);
-    if (c == '"' || c == '\'') return parse_string(L, c);
+    if (c == '"' || c == '\'' || c == '`') return parse_string(L, c);
 
     if (isdigit((unsigned char)c) ||
         (c == '-' && L->i + 1 < L->n && isdigit((unsigned char)L->src[L->i+1]))) {
@@ -1053,6 +1057,31 @@ static void eval_word(const char *w) {
     /* :bus — push the current bus_dir as a string (or "" if unset) */
     if (!strcmp(w, ":bus")) {
         push(v_str(bus_dir ? bus_dir : ""));
+        return;
+    }
+
+    /* :argc — push the number of user args (set by the driver) */
+    if (!strcmp(w, ":argc")) {
+        push(v_num(user_argc));
+        return;
+    }
+
+    /* :argv — pop an index n, push the nth user arg as string (or "" if oob) */
+    if (!strcmp(w, ":argv")) {
+        Value *v = pop();
+        long n = v ? v->as.num : -1;
+        v_unref(v);
+        if (n >= 0 && n < user_argc && user_argv) push(v_str(user_argv[n]));
+        else                                       push(v_str(""));
+        return;
+    }
+
+    /* :env — pop a string name, push getenv(name) or "" if unset */
+    if (!strcmp(w, ":env")) {
+        Value *v = pop();
+        const char *val = (v && v->type == V_STR) ? getenv(v->as.str) : NULL;
+        push(v_str(val ? val : ""));
+        v_unref(v);
         return;
     }
 

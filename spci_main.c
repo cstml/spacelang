@@ -35,14 +35,22 @@ int main(int argc, char **argv) {
     setvbuf(stderr, NULL, _IOLBF, 0);
     const char *files[32]; int nfiles = 0;
     int serve = 0;
-    for (int i = 1; i < argc; i++) {
-        if (!strcmp(argv[i], "--name") && i + 1 < argc) { my_name = argv[++i]; }
-        else if (!strcmp(argv[i], "--bus") && i + 1 < argc) { bus_dir = argv[++i]; }
+    /* Args after a literal `--` become the user-visible argv (read from
+     * spaceforth via :argc / :argv). */
+    int dd = argc;
+    for (int i = 1; i < argc; i++) if (!strcmp(argv[i], "--")) { dd = i; break; }
+    for (int i = 1; i < dd; i++) {
+        if (!strcmp(argv[i], "--name") && i + 1 < dd) { my_name = argv[++i]; }
+        else if (!strcmp(argv[i], "--bus") && i + 1 < dd) { bus_dir = argv[++i]; }
         else if (!strcmp(argv[i], "--serve")) { serve = 1; }
         else if (argv[i][0] != '-') {
             if (nfiles < 32) files[nfiles++] = argv[i];
         }
         else { fprintf(stderr, "unknown arg: %s\n", argv[i]); return 1; }
+    }
+    if (dd < argc) {
+        user_argc = argc - (dd + 1);
+        user_argv = (char *const *)&argv[dd + 1];
     }
     if ((my_name && !bus_dir) || (!my_name && bus_dir)) {
         fprintf(stderr, "--name and --bus must be used together\n"); return 1;
