@@ -707,11 +707,15 @@ static void eval_word(const char *w) {
         push(b); push(c); push(a); return;
     }
 
-    /* if: pops cond, then-branch, else-branch (top to bottom) */
+    /* if: cond [then] [else] if  -- eager. Pops else, then, cond and
+       evaluates the selected thunk. */
     if (!strcmp(w,"if")) {
-        Value *c = pop(), *th = pop(), *el = pop();
-        push(truthy(c) ? th : el);
-        v_unref(truthy(c) ? el : th);
+        Value *el = pop(), *th = pop(), *c = pop();
+        Value *chosen = truthy(c) ? th : el;
+        Value *discard = truthy(c) ? el : th;
+        if (chosen && chosen->type == V_THUNK) { run_thunk(chosen); v_unref(chosen); }
+        else { push(chosen); }
+        v_unref(discard);
         v_unref(c);
         return;
     }
