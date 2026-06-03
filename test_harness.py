@@ -179,6 +179,31 @@ class TestEval(TimedTestCase):
         out = self.eval("[ 1 2 + ] ! .")
         self.assertIn("3", out)
 
+    def test_cmp_cross_type(self):
+        """Ordering operators are total across all Value types:
+        number < bool/word < thunk < string."""
+        # within-type
+        out = self.eval('"a" "b" < .');     self.assertIn("t", out)
+        out = self.eval('"b" "a" < .');     self.assertIn("nil", out)
+        out = self.eval('"abc" "abd" < .'); self.assertIn("t", out)
+        out = self.eval('"a" "a" <= .');    self.assertIn("t", out)
+        out = self.eval('"b" "a" >= .');    self.assertIn("t", out)
+        # atoms (bool sub-ordered alphabetically with word)
+        out = self.eval('false true < .');  self.assertIn("t", out)
+        # cross-type rank ordering
+        out = self.eval('0 false < .');     self.assertIn("t", out)   # number < bool
+        out = self.eval('true [x] < .');    self.assertIn("t", out)   # bool < thunk
+        out = self.eval('[x] "x" < .');     self.assertIn("t", out)   # thunk < string
+        out = self.eval('1 "a" < .');       self.assertIn("t", out)   # number < string (transitive)
+
+    def test_eq_cross_type(self):
+        """`=` is structural across types; mismatched types yield nil."""
+        out = self.eval('1 1 = .');                       self.assertIn("t", out)
+        out = self.eval('"a" "a" = .');                   self.assertIn("t", out)
+        out = self.eval('[1 2 +] [1 2 +] = .');           self.assertIn("t", out)
+        out = self.eval('1 "1" = .');                     self.assertIn("nil", out)
+        out = self.eval('[1] [2] = .');                   self.assertIn("nil", out)
+
     def test_strings(self):
         out = self.eval('"hello" .')
         self.assertIn('"hello"', out)
@@ -840,6 +865,11 @@ test/summary
             os.chdir(cwd)
         self.assertIn("PASS c-eq", stderr)
         self.assertIn("ALL PASSED", stderr)
+
+    def test_example_cmp_test_sp(self):
+        """example/cmp_test.sp covers the total ordering across all Value types."""
+        _, stderr, _ = self.spct(str(ROOT / "example/cmp_test.sp"))
+        self.assertIn("ALL PASSED (21)", stderr)
 
     def test_math_library_example(self):
         """../sp-math/example/math_test.sp runs all 53 math assertions."""

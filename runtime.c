@@ -656,21 +656,80 @@ static void bin_num(long (*f)(long,long)) {
     v_unref(a); v_unref(b);
     push(r);
 }
-static void bin_cmp(int (*f)(long,long)) {
-    Value *b = pop(), *a = pop();
-    Value *r = v_bool(f(n_of(a), n_of(b)));
-    v_unref(a); v_unref(b);
-    push(r);
-}
 static long add(long a,long b){return a+b;}
 static long sub(long a,long b){return a-b;}
 static long mul(long a,long b){return a*b;}
 static long divv(long a,long b){return a/b;}
-static int  lt(long a,long b){return a<b;}
-static int  gt(long a,long b){return a>b;}
-static int  le(long a,long b){return a<=b;}
-static int  ge(long a,long b){return a>=b;}
-static int  eq(long a,long b){return a==b;}
+
+/* Total ordering across every Value type.
+ *   number < bool/word < thunk < string
+ * BOOL and WORD share a rank, compared by name (so the bool `true`
+ * equals the word-named `true`). Within a rank, content order applies;
+ * THUNK is hash-compared. */
+static int type_rank(VType t) {
+    switch (t) {
+        case V_NUM:   return 0;
+        case V_BOOL:  return 1;
+        case V_WORD:  return 1;
+        case V_THUNK: return 2;
+        case V_STR:   return 3;
+    }
+    return 4;
+}
+static const char *name_of(Value *v) {
+    if (v->type == V_BOOL) return v->as.boolean ? "true" : "false";
+    return v->as.word;  /* V_WORD */
+}
+static uint64_t value_hash(Value *v) {
+    SBuf sb = {0};
+    format_value(&sb, v);
+    uint64_t h = 1469598103934665603ULL; /* FNV-1a 64 offset basis */
+    for (size_t i = 0; i < sb.len; i++) {
+        h ^= (unsigned char)sb.buf[i];
+        h *= 1099511628211ULL;
+    }
+    free(sb.buf);
+    return h;
+}
+static int value_cmp(Value *a, Value *b) {
+    int ra = type_rank(a->type), rb = type_rank(b->type);
+    if (ra != rb) return ra < rb ? -1 : 1;
+    /* same rank — BOOL and WORD share rank 1, compared by name */
+    if (ra == 1) {
+        int c = strcmp(name_of(a), name_of(b));
+        return c < 0 ? -1 : c > 0 ? 1 : 0;
+    }
+    switch (a->type) {
+        case V_NUM:
+            if (a->as.num < b->as.num) return -1;
+            if (a->as.num > b->as.num) return  1;
+            return 0;
+        case V_STR: {
+            int c = strcmp(a->as.str, b->as.str);
+            return c < 0 ? -1 : c > 0 ? 1 : 0;
+        }
+        case V_THUNK: {
+            uint64_t ha = value_hash(a), hb = value_hash(b);
+            if (ha < hb) return -1;
+            if (ha > hb) return  1;
+            return 0;
+        }
+        case V_BOOL: case V_WORD: return 0; /* handled above */
+    }
+    return 0;
+}
+static void bin_cmp(int (*pred)(int)) {
+    Value *b = pop(), *a = pop();
+    int c = value_cmp(a, b);
+    Value *r = v_bool(pred(c));
+    v_unref(a); v_unref(b);
+    push(r);
+}
+static int  lt_p(int c){ return c <  0; }
+static int  gt_p(int c){ return c >  0; }
+static int  le_p(int c){ return c <= 0; }
+static int  ge_p(int c){ return c >= 0; }
+static int  eq_p(int c){ return c == 0; }
 
 /* a "binding form" identifies a name. Two shapes accepted:
  *   [foo]   — a thunk of length 1 whose single element is a word
@@ -696,11 +755,11 @@ static void eval_word(const char *w) {
     if (!strcmp(w,"-")) { bin_num(sub); return; }
     if (!strcmp(w,"*")) { bin_num(mul); return; }
     if (!strcmp(w,"/")) { bin_num(divv); return; }
-    if (!strcmp(w,"<")) { bin_cmp(lt); return; }
-    if (!strcmp(w,">")) { bin_cmp(gt); return; }
-    if (!strcmp(w,"<=")){ bin_cmp(le); return; }
-    if (!strcmp(w,">=")){ bin_cmp(ge); return; }
-    if (!strcmp(w,"=")) { bin_cmp(eq); return; }
+    if (!strcmp(w,"<")) { bin_cmp(lt_p); return; }
+    if (!strcmp(w,">")) { bin_cmp(gt_p); return; }
+    if (!strcmp(w,"<=")){ bin_cmp(le_p); return; }
+    if (!strcmp(w,">=")){ bin_cmp(ge_p); return; }
+    if (!strcmp(w,"=")) { bin_cmp(eq_p); return; }
 
     /* stack */
     if (!strcmp(w,"dup"))  { Value *x = pop(); push(x); push(v_ref(x)); return; }

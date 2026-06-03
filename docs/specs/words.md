@@ -4,10 +4,10 @@ One file per built-in word. Each spec covers stack effect, semantics, an example
 
 ## Arithmetic
 
-- [`+`](words/add.md)
-- [`-`](words/sub.md)
-- [`*`](words/mul.md)
-- [`/`](words/div.md)
+- [`+`](./words/add.md)
+- [`-`](./words/sub.md)
+- [`*`](./words/mul.md)
+- [`/`](./words/div.md)
 
 ## Comparison
 
