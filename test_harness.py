@@ -340,6 +340,12 @@ class TestEval(TimedTestCase):
         out = self.eval("1 { ignored } 2 + .")
         self.assertIn("3", out)
 
+    def test_multiline_comment(self):
+        out = self.eval("{ line one\nline two\nline three } 1 2 + .")
+        self.assertIn("3", out)
+        out = self.eval("{\n}\n9 .")
+        self.assertIn("9", out)
+
 
 # ── compile tests: spcc produces correct binaries ─────────────────────
 

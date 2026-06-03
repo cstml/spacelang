@@ -17,6 +17,44 @@
 
 #include "spci.h"
 
+/* Returns updated comment depth after scanning `s`. `{ ... }` comments do not
+ * nest in the parser, but we track depth as a plain counter; the parser will
+ * treat the first `}` as the closer regardless. Strings (", ', `) shield their
+ * contents so `{` inside a literal does not start a comment. */
+static int scan_comment_depth(const char *s, int depth) {
+    char in_str = 0;
+    for (; *s; s++) {
+        char c = *s;
+        if (depth > 0) { if (c == '}') depth--; continue; }
+        if (in_str)   { if (c == in_str) in_str = 0; continue; }
+        if (c == '"' || c == '\'' || c == '`') in_str = c;
+        else if (c == '{') depth++;
+    }
+    return depth;
+}
+
+/* Read one logical chunk from stdin: keeps reading lines while inside an open
+ * `{ ... }` comment so multiline comments work in the REPL. Returns malloc'd
+ * buffer, or NULL on EOF with nothing buffered. */
+static char *read_chunk(int is_tty) {
+    char line[4096];
+    char *buf = NULL; size_t len = 0;
+    int depth = 0;
+    for (;;) {
+        if (!fgets(line, sizeof line, stdin)) {
+            if (buf) return buf;
+            return NULL;
+        }
+        size_t llen = strlen(line);
+        char *nb = realloc(buf, len + llen + 1);
+        if (!nb) { free(buf); return NULL; }
+        buf = nb; memcpy(buf + len, line, llen + 1); len += llen;
+        depth = scan_comment_depth(line, depth);
+        if (depth <= 0) return buf;
+        if (is_tty) { printf("..  "); fflush(stdout); }
+    }
+}
+
 static char *slurp_file(const char *path) {
     FILE *f = fopen(path, "rb");
     if (!f) { perror(path); exit(1); }
@@ -94,12 +132,13 @@ int main(int argc, char **argv) {
             if (poll(pfds, n, 1000) <= 0) continue;
 
             if (stdin_slot != (size_t)-1 && (pfds[stdin_slot].revents & POLLIN)) {
-                char line[4096];
-                if (!fgets(line, sizeof line, stdin)) {
+                char *chunk = read_chunk(is_tty);
+                if (!chunk) {
                     if (is_tty) return 0;        /* Ctrl-D → exit */
                     stdin_open = 0;               /* pipe closed, keep serving */
                 } else {
-                    feed(line);
+                    feed(chunk);
+                    free(chunk);
                     if (is_tty) { printf("> "); fflush(stdout); }
                 }
             }
@@ -123,12 +162,14 @@ int main(int argc, char **argv) {
     }
 
     /* REPL (no mesh) */
-    char line[4096];
-    printf("spci · spacelang in C · :bye to quit\n");
+    int is_tty = isatty(STDIN_FILENO);
+    if (is_tty) printf("spci · spacelang in C · :bye to quit\n");
     for (;;) {
-        printf("> "); fflush(stdout);
-        if (!fgets(line, sizeof line, stdin)) { printf("\n"); break; }
-        feed(line);
+        if (is_tty) { printf("> "); fflush(stdout); }
+        char *chunk = read_chunk(is_tty);
+        if (!chunk) { printf("\n"); break; }
+        feed(chunk);
+        free(chunk);
     }
     return 0;
 }
