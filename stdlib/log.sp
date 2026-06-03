@@ -9,8 +9,8 @@
 {                                                                          }
 { All levels go to stderr so they stay out of the way of words that pipe   }
 { stdout via sh/>.                                                         }
-{                                                                          }
-{ Assumes lib/str.sp is already loaded by the caller.                      }
+
+"github.com/cstml/spacelang/stdlib/str.sp" :require
 
 { log/_emit: prefix msg -- ; shell out `echo '<prefix><msg>' >&2`.
   Caller is responsible for keeping single-quotes out of the message. }

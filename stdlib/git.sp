@@ -16,8 +16,7 @@
 { with the function name (e.g. git/_ub-p). Like str/, they are NOT         }
 { reentrant — don't call git/ functions from within themselves.            }
 
-{ Assumes lib/str.sp is already loaded by the caller. }
-
+"github.com/cstml/spacelang/stdlib/str.sp" :require
 
 { ===================================================================
   URL helpers

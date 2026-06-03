@@ -7,7 +7,7 @@
 {                                                                          }
 { Like str/, helpers use named scratch bindings and are NOT reentrant.    }
 
-{ Assumes lib/str.sp is already loaded by the caller. }
+"github.com/cstml/spacelang/stdlib/str.sp" :require
 
 
 [ { path -- }
