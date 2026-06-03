@@ -860,6 +860,25 @@ class TestSpcd(unittest.TestCase):
         self.spcd("fetch")
         self.assertEqual(before, Path("lock.sp").read_text())
 
+    # -- T3c: live regression against github.com/cstml/spacelang.
+    # Skipped offline or when the host is unreachable.
+    def test_fetch_idempotent_github(self):
+        try:
+            socket.create_connection(("github.com", 443), timeout=2).close()
+        except OSError:
+            raise unittest.SkipTest("no network to github.com")
+        url = "github.com/cstml/spacelang"
+        r = self.spcd("add", url)
+        if r.returncode != 0:
+            raise unittest.SkipTest(f"spcd add failed (likely network): {r.stderr}")
+        second = subprocess.run([SPCD, "fetch"], capture_output=True,
+                                text=True, timeout=30)
+        self.assertEqual(second.returncode, 0)
+        self.assertNotIn("stack underflow", second.stdout + second.stderr)
+        self.assertNotIn("parser:",         second.stdout + second.stderr)
+        self.assertIn("up to date",         second.stdout + second.stderr)
+        self.assertIn(url, Path("lock.sp").read_text())
+
     # -- T3b: regression — URLs with '.' must round-trip through lock.sp
     def test_fetch_idempotent_dotted_url(self):
         url = str(FIXDIR / "site.example.com.git")
