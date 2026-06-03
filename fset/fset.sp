@@ -24,8 +24,8 @@
 
 [ { item path -- }
   [fs/a-p] @  [fs/a-i] @
-  fs/a-i fs/a-p fset/has?
-  [ ]
   [ `echo '` fs/a-i str/cat `' >> ` str/cat fs/a-p str/cat sh/! drop ]
-   if 
+  [ ]
+  fs/a-i fs/a-p fset/has?
+  if
 ] [fset/add] @

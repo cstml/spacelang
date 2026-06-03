@@ -10,47 +10,47 @@
 { ---- 1. git/url-basename ---- }
 `git/url-basename: ` :log
 
-`github.com/foo/bar` git/url-basename `bar` str/eq
-[ `  url-basename simple: OK` :log ]
 [ `  url-basename simple: FAIL` :log ]
- if 
+[ `  url-basename simple: OK` :log ]
+`github.com/foo/bar` git/url-basename `bar` str/eq
+ if
 
-`github.com/foo/bar.git` git/url-basename `bar` str/eq
-[ `  url-basename strip .git: OK` :log ]
 [ `  url-basename strip .git: FAIL` :log ]
- if 
+[ `  url-basename strip .git: OK` :log ]
+`github.com/foo/bar.git` git/url-basename `bar` str/eq
+ if
 
-`host.com/a/b/c` git/url-basename `c` str/eq
-[ `  url-basename deep: OK` :log ]
 [ `  url-basename deep: FAIL` :log ]
- if 
+[ `  url-basename deep: OK` :log ]
+`host.com/a/b/c` git/url-basename `c` str/eq
+ if
 
 { ---- 2. git/url-https ---- }
 `git/url-https: ` :log
 
-`github.com/foo/bar` git/url-https `https://github.com/foo/bar` str/eq
-[ `  url-https adds scheme: OK` :log ]
 [ `  url-https adds scheme: FAIL` :log ]
- if 
+[ `  url-https adds scheme: OK` :log ]
+`github.com/foo/bar` git/url-https `https://github.com/foo/bar` str/eq
+ if
 
-`https://github.com/foo/bar` git/url-https `https://github.com/foo/bar` str/eq
-[ `  url-https already has scheme: OK` :log ]
 [ `  url-https already has scheme: FAIL` :log ]
- if 
+[ `  url-https already has scheme: OK` :log ]
+`https://github.com/foo/bar` git/url-https `https://github.com/foo/bar` str/eq
+ if
 
 { ===== Clone / query tests (require the local bare repo) ===== }
 
 [ { target sha -- }
   [asrt-sha] @  [asrt-t] @
-  asrt-t git/rev-parse asrt-sha str/eq
-  [
-    `  ` asrt-t str/cat ` matches expected SHA: OK` str/cat :log
-  ]
   [
     `  ` asrt-t str/cat ` SHA mismatch: FAIL` str/cat :log
     `    expected: ` asrt-sha str/cat :log
     `    got:      ` asrt-t git/rev-parse str/cat :log
   ]
+  [
+    `  ` asrt-t str/cat ` matches expected SHA: OK` str/cat :log
+  ]
+  asrt-t git/rev-parse asrt-sha str/eq
   if
 ] [assert-sha] @
 
@@ -82,23 +82,23 @@
 
 { ---- 6. git/rev-parse ---- }
 `git/rev-parse: ` :log
-`/tmp/spacelang_git_test/tmp_lib/test-sha` git/rev-parse dup str/len 40 =
-[ `  rev-parse produces 40-char SHA: OK` :log ]
 [ `  rev-parse wrong length: FAIL` :log ]
- if 
+[ `  rev-parse produces 40-char SHA: OK` :log ]
+`/tmp/spacelang_git_test/tmp_lib/test-sha` git/rev-parse dup str/len 40 =
+ if
 drop
 
 { ---- 7. git/sha-eq ---- }
 `git/sha-eq: ` :log
-`/tmp/spacelang_git_test/tmp_lib/test-sha` `0c7e6d3d9794a92ede8dfa53040de810dd3f6e7a` git/sha-eq
-[ `  sha-eq match: OK` :log ]
 [ `  sha-eq match: FAIL` :log ]
- if 
+[ `  sha-eq match: OK` :log ]
+`/tmp/spacelang_git_test/tmp_lib/test-sha` `0c7e6d3d9794a92ede8dfa53040de810dd3f6e7a` git/sha-eq
+ if
 
-`/tmp/spacelang_git_test/tmp_lib/test-sha` `0000000000000000000000000000000000000000` git/sha-eq
-[ `  sha-eq mismatch: FAIL (should be false)` :log ]
 [ `  sha-eq mismatch: OK` :log ]
- if 
+[ `  sha-eq mismatch: FAIL (should be false)` :log ]
+`/tmp/spacelang_git_test/tmp_lib/test-sha` `0000000000000000000000000000000000000000` git/sha-eq
+ if
 
 { ---- 8. git/clone-if-stale: target missing → clones ---- }
 `git/clone-if-stale: ` :log

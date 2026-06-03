@@ -25,38 +25,39 @@
 
 { git/url-basename: last "/"-segment of a URL, strip trailing .git. }
 [
-  ub--p `/` str/contains?
+  [ ]
   [
     ub--p `/` str/index 1 + [ub--s] @
     ub--p str/len ub--s - [ub--n] @
     ub--p ub--s ub--n str/sub [ub--p] @
     ub--loop
   ]
-  [ ]
+  ub--p `/` str/contains?
   if
 ] [ub--loop] @
 
 [ { url -- basename }
   [ub--p] @
   ub--loop
-  ub--p
-  dup `.git` str/ends-with?
-  [ dup str/len 4 - 0 swap str/sub ]
-  [ ]
+  ub--p [ub--q] @
+  [ ub--q ]
+  [ ub--q ub--q str/len 4 - 0 swap str/sub ]
+  ub--q `.git` str/ends-with?
   if
 ] [git/url-basename] @
 
 { git/url-https: prepend https:// only if url has no scheme yet and isn't
   an absolute path (so local /tmp/... repos pass through unchanged). }
 [ { url -- https-url }
-  dup `://` str/contains?
-  [ ]
+  [uh--u] @
   [
-    dup `/` str/starts-with?
-    [ ]
-    [ `https://` swap str/cat ]
+    [ `https://` uh--u str/cat ]
+    [ uh--u ]
+    uh--u `/` str/starts-with?
     if
   ]
+  [ uh--u ]
+  uh--u `://` str/contains?
   if
 ] [git/url-https] @
 
@@ -119,21 +120,21 @@
 [ { url sha target -- }
   [gcis-t] @  [gcis-s] @  [gcis-u] @
 
-  `test -d "` gcis-t str/cat `"` str/cat sh/! 0 =
+  [
+    { Dir missing: new clone }
+    gcis-u gcis-s gcis-t git/clone-sha
+  ]
   [
     { Dir exists: check if SHA matches }
-    gcis-t gcis-s git/sha-eq
-    [ { Match: skip } ]
     [
       { Mismatch: rm + re-clone }
       `rm -rf "` gcis-t str/cat `"` str/cat sh/! drop
       gcis-u gcis-s gcis-t git/clone-sha
     ]
-     if 
+    [ { Match: skip } ]
+    gcis-t gcis-s git/sha-eq
+    if
   ]
-  [
-    { Dir missing: new clone }
-    gcis-u gcis-s gcis-t git/clone-sha
-  ]
-   if 
+  `test -d "` gcis-t str/cat `"` str/cat sh/! 0 =
+  if
 ] [git/clone-if-stale] @

@@ -20,5 +20,5 @@
   ]                            { el: ran when cond is nil (name missing) }
   [ ]                          { th: ran when cond is t (name exists)    }
   rot                          { stack [el th cond] for if               }
-  if !
+  if
 ] [spawn-node] @

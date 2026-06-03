@@ -743,7 +743,7 @@ class TestSpcd(unittest.TestCase):
     coverage. Each test runs in a fresh sandbox.
     """
 
-    TIMEOUT = 30  # spcd install shells out to cc; needs headroom
+    TIMEOUT = 5
 
     @classmethod
     def setUpClass(cls):

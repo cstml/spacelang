@@ -96,14 +96,14 @@ spcd-set-todo
   [fo/bn] @  [fo/t] @  [fo/r] @  [fo/k] @  [fo/u] @
   `spcd: cloning ` fo/u str/cat log/info
   `mkdir -p lib` sh/! drop
-  fo/k `head` str/eq
-  [ fo/u fo/t git/clone ]
   [
-    fo/k `sha` str/eq
-    [ fo/u fo/r fo/t git/clone-sha ]
     [ fo/u fo/r fo/t git/clone-branch ]
+    [ fo/u fo/r fo/t git/clone-sha ]
+    fo/k `sha` str/eq
     if
   ]
+  [ fo/u fo/t git/clone ]
+  fo/k `head` str/eq
   if
 ] [fetch-one/clone] @
 
@@ -121,40 +121,40 @@ spcd-set-todo
 
   { Lock SHA, if any, overrides manifest ref. }
   fo/u tmp-lock fmap/get [fo/ls] @
-  fo/ls str/len 0 >
-  [ fo/ls [fo/r] @  `sha` [fo/k] @ ]
   [ ]
+  [ fo/ls [fo/r] @  `sha` [fo/k] @ ]
+  fo/ls str/len 0 >
   if
 
   { Three cases: dir missing → clone; sha-kind + matches → skip;
     otherwise rm + re-clone.                                          }
-  `test -d ` fo/t str/cat sh/! 0 =
   [
-    fo/k `sha` str/eq
-    [
-      fo/t fo/r git/sha-eq
-      [
-        `spcd: ` fo/bn str/cat ` up to date` str/cat log/info
-        fo/u fetch-one/record
-      ]
-      [
-        `rm -rf ` fo/t str/cat sh/! drop
-        fo/u fo/k fo/r fo/t fo/bn fetch-one/clone
-        fo/u fetch-one/record
-      ]
-      if
-    ]
+    fo/u fo/k fo/r fo/t fo/bn fetch-one/clone
+    fo/u fetch-one/record
+  ]
+  [
     [
       `rm -rf ` fo/t str/cat sh/! drop
       fo/u fo/k fo/r fo/t fo/bn fetch-one/clone
       fo/u fetch-one/record
     ]
+    [
+      [
+        `rm -rf ` fo/t str/cat sh/! drop
+        fo/u fo/k fo/r fo/t fo/bn fetch-one/clone
+        fo/u fetch-one/record
+      ]
+      [
+        `spcd: ` fo/bn str/cat ` up to date` str/cat log/info
+        fo/u fetch-one/record
+      ]
+      fo/t fo/r git/sha-eq
+      if
+    ]
+    fo/k `sha` str/eq
     if
   ]
-  [
-    fo/u fo/k fo/r fo/t fo/bn fetch-one/clone
-    fo/u fetch-one/record
-  ]
+  `test -d ` fo/t str/cat sh/! 0 =
   if
 ] [fetch-one] @
 
@@ -189,47 +189,6 @@ spcd-set-todo
 
 [
   { cond is true while there is more work in tmp-todo. }
-  `test -s ` tmp-todo str/cat sh/! 0 =
-  [
-    tmp-todo pop-line [pf-line] @
-    pf-line `1` cut-field [pf-url]  @
-    pf-line `2` cut-field [pf-kind] @
-    pf-line `3` cut-field [pf-ref]  @
-
-    pf-url tmp-vis fset/has?
-    [ process-fetch-loop ]
-    [
-      pf-url tmp-vis fset/add
-
-      pf-url git/url-basename [pf-bn] @
-      `lib/` pf-bn str/cat [pf-t] @
-
-      pf-bn tmp-bnset fset/has?
-      [
-        pf-bn tmp-bnmap fmap/get [pf-collide] @
-        `spcd: basename '` pf-bn str/cat `' claimed by both '` str/cat
-        pf-collide str/cat `' and '` str/cat pf-url str/cat `'` str/cat log/info
-      ]
-      [
-        pf-bn pf-url tmp-bnmap fmap/put
-        pf-bn tmp-bnset fset/add
-
-        pf-url pf-kind pf-ref fetch-one
-
-        `test -f ` pf-t str/cat `/deps.sp` str/cat sh/! 0 =
-        [
-          spcd-set-todo
-          `cat ` pf-t str/cat `/deps.sp` str/cat sh/> eval
-        ]
-        [ ]
-        if
-      ]
-      if
-
-      process-fetch-loop
-    ]
-    if
-  ]
   [
     `spcd: writing lib/lock.sp` log/info
     tmp-new fmap/sort-u
@@ -239,6 +198,47 @@ spcd-set-todo
     `spcd: fetch done` log/info
     spcd-cleanup
   ]
+  [
+    tmp-todo pop-line [pf-line] @
+    pf-line `1` cut-field [pf-url]  @
+    pf-line `2` cut-field [pf-kind] @
+    pf-line `3` cut-field [pf-ref]  @
+
+    [
+      pf-url tmp-vis fset/add
+
+      pf-url git/url-basename [pf-bn] @
+      `lib/` pf-bn str/cat [pf-t] @
+
+      [
+        pf-bn pf-url tmp-bnmap fmap/put
+        pf-bn tmp-bnset fset/add
+
+        pf-url pf-kind pf-ref fetch-one
+
+        [ ]
+        [
+          spcd-set-todo
+          `cat ` pf-t str/cat `/deps.sp` str/cat sh/> eval
+        ]
+        `test -f ` pf-t str/cat `/deps.sp` str/cat sh/! 0 =
+        if
+      ]
+      [
+        pf-bn tmp-bnmap fmap/get [pf-collide] @
+        `spcd: basename '` pf-bn str/cat `' claimed by both '` str/cat
+        pf-collide str/cat `' and '` str/cat pf-url str/cat `'` str/cat log/info
+      ]
+      pf-bn tmp-bnset fset/has?
+      if
+
+      process-fetch-loop
+    ]
+    [ process-fetch-loop ]
+    pf-url tmp-vis fset/has?
+    if
+  ]
+  `test -s ` tmp-todo str/cat sh/! 0 =
   if
 ] [process-fetch-loop] @
 
@@ -267,25 +267,25 @@ spcd-set-todo
   spcd-reset
 
   { Phase 1: lock.sp if present }
-  `test -f lib/lock.sp` sh/! 0 =
+  [ ]
   [
     spcd-set-lock
     `cat lib/lock.sp` sh/> eval
   ]
-  [ ]
+  `test -f lib/lock.sp` sh/! 0 =
   if
 
   { Phase 2: deps.sp }
-  `test -f deps.sp` sh/! 0 =
+  [
+    `spcd: no deps.sp -- nothing to fetch` log/info
+    spcd-cleanup
+  ]
   [
     spcd-set-todo
     `cat deps.sp` sh/> eval
     process-fetch-loop
   ]
-  [
-    `spcd: no deps.sp -- nothing to fetch` log/info
-    spcd-cleanup
-  ]
+  `test -f deps.sp` sh/! 0 =
   if
 ] [verb-fetch] @
 
@@ -293,12 +293,12 @@ spcd-set-todo
   `spcd: update` log/info
   spcd-reset
   spcd-set-todo
-  `test -f deps.sp` sh/! 0 =
+  [ `spcd: no deps.sp` log/info spcd-cleanup ]
   [
     `cat deps.sp` sh/> eval
     process-fetch-loop
   ]
-  [ `spcd: no deps.sp` log/info spcd-cleanup ]
+  `test -f deps.sp` sh/! 0 =
   if
 ] [verb-update] @
 
@@ -308,9 +308,9 @@ spcd-set-todo
   =================================================================== }
 
 [
-  `test -f lib/lock.sp` sh/! 0 =
-  [ `grep -v '^{' lib/lock.sp | grep -v '^$' || true` sh/> . ]
   [ `spcd: no lockfile; run 'spcd fetch'` log/info ]
+  [ `grep -v '^{' lib/lock.sp | grep -v '^$' || true` sh/> . ]
+  `test -f lib/lock.sp` sh/! 0 =
   if
   spcd-cleanup
 ] [verb-list] @
@@ -322,12 +322,13 @@ spcd-set-todo
 
 { parse-at: split "url@ref" — emits url and ref ("" if no @). }
 [ { s -- url ref }
-  dup `@` str/contains?
+  [pa/s] @
+  [ pa/s `` ]
   [
-    dup `echo '` swap str/cat `' | cut -d@ -f1` str/cat sh/> str/strip-nl swap
-    `echo '` swap str/cat `' | cut -d@ -f2-` str/cat sh/> str/strip-nl
+    `echo '` pa/s str/cat `' | cut -d@ -f1` str/cat sh/> str/strip-nl
+    `echo '` pa/s str/cat `' | cut -d@ -f2-` str/cat sh/> str/strip-nl
   ]
-  [ `` ]
+  pa/s `@` str/contains?
   if
 ] [parse-at] @
 
@@ -345,8 +346,6 @@ spcd-set-todo
 
 [
   1 :argv [inst-url] @
-  inst-url str/len 0 =
-  [ `spcd: install: missing URL` log/info spcd-cleanup ]
   [
     inst-url parse-at [inst-r] @ [inst-u] @
 
@@ -354,47 +353,49 @@ spcd-set-todo
 
     { bindir: $SPACELANG_BIN or $HOME/.local/bin }
     `SPACELANG_BIN` :env [inst-bin] @
-    inst-bin str/len 0 =
+    [ ]
     [
-      `HOME` :env str/len 0 =
-      [ `spcd: cannot determine install dir; set SPACELANG_BIN` log/info spcd-cleanup ]
       [ `HOME` :env `/.local/bin` str/cat [inst-bin] @ ]
+      [ `spcd: cannot determine install dir; set SPACELANG_BIN` log/info spcd-cleanup ]
+      `HOME` :env str/len 0 =
       if
     ]
-    [ ]
+    inst-bin str/len 0 =
     if
     `mkdir -p ` inst-bin str/cat sh/! drop
 
     `mktemp -d` sh/> str/strip-nl [inst-tmp] @
     `spcd: install: fetching ` inst-u str/cat log/info
 
-    inst-r str/len 0 =
-    [ inst-u inst-tmp git/clone ]
     [
       inst-r ref-kind [inst-k] @
-      inst-k `sha` str/eq
-      [ inst-u inst-r inst-tmp git/clone-sha ]
       [ inst-u inst-r inst-tmp git/clone-branch ]
+      [ inst-u inst-r inst-tmp git/clone-sha ]
+      inst-k `sha` str/eq
       if
     ]
+    [ inst-u inst-tmp git/clone ]
+    inst-r str/len 0 =
     if
 
-    `test -f ` inst-tmp str/cat `/main.sp` str/cat sh/! 0 =
+    [ `spcd: no main.sp at top of repo '` inst-u str/cat `'` str/cat log/info ]
     [
       `spcd: install: compiling ` inst-bn str/cat log/info
       `spcc --as ` inst-bn str/cat ` ` str/cat inst-tmp str/cat `/main.sp -o ` str/cat
       inst-bin str/cat `/` str/cat inst-bn str/cat sh/! [inst-rc] @
-      inst-rc 0 =
-      [ `spcd: installed ` inst-bn str/cat ` -> ` str/cat inst-bin str/cat `/` str/cat inst-bn str/cat log/info ]
       [ `spcd: spcc failed` log/info ]
+      [ `spcd: installed ` inst-bn str/cat ` -> ` str/cat inst-bin str/cat `/` str/cat inst-bn str/cat log/info ]
+      inst-rc 0 =
       if
     ]
-    [ `spcd: no main.sp at top of repo '` inst-u str/cat `'` str/cat log/info ]
+    `test -f ` inst-tmp str/cat `/main.sp` str/cat sh/! 0 =
     if
 
     `rm -rf ` inst-tmp str/cat sh/! drop
     spcd-cleanup
   ]
+  [ `spcd: install: missing URL` log/info spcd-cleanup ]
+  inst-url str/len 0 =
   if
 ] [verb-install] @
 
@@ -405,23 +406,23 @@ spcd-set-todo
 
 [
   1 :argv [add--a] @
-  add--a str/len 0 =
-  [ `spcd: add: missing URL[@ref]` log/info spcd-cleanup ]
   [
     add--a parse-at [add--r] @ [add--u] @
-    add--r str/len 0 =
-    [ `"` add--u str/cat `" deps/head
-` str/cat ]
     [
       add--r ref-kind [add--k] @
       `"` add--u str/cat `" "` str/cat add--r str/cat `" deps/` str/cat add--k str/cat `
 ` str/cat
     ]
+    [ `"` add--u str/cat `" deps/head
+` str/cat ]
+    add--r str/len 0 =
     if
     `cat >> deps.sp` sh/| drop
 
     verb-fetch
   ]
+  [ `spcd: add: missing URL[@ref]` log/info spcd-cleanup ]
+  add--a str/len 0 =
   if
 ] [verb-add] @
 
@@ -432,24 +433,30 @@ spcd-set-todo
 
 [
   0 :argv [verb] @
-  verb `add`     str/eq [ verb-add ] [
-    verb `fetch`  str/eq [ verb-fetch ] [
-      verb `update` str/eq [ verb-update ] [
-        verb `list`  str/eq [ verb-list ] [
-          verb `install` str/eq [ verb-install ] [
-            verb `clean` str/eq [ verb-clean ] [
+  [
+    [
+      [
+        [
+          [
+            [
               `spcd: unknown verb '` verb str/cat `'` str/cat log/info
               spcd-cleanup
-            ]  if 
-          ]  if 
-        ]  if 
-      ]  if 
-    ]  if 
-  ]  if 
+            ]
+            [ verb-clean ] verb `clean` str/eq if
+          ]
+          [ verb-install ] verb `install` str/eq if
+        ]
+        [ verb-list ] verb `list` str/eq if
+      ]
+      [ verb-update ] verb `update` str/eq if
+    ]
+    [ verb-fetch ] verb `fetch` str/eq if
+  ]
+  [ verb-add ] verb `add` str/eq if
 ] [dispatch] @
 
 
-:argc 0 =
-[ `Usage: spcd add|fetch|update|list|install|clean [args]` log/info spcd-cleanup ]
 [ dispatch ]
- if 
+[ `Usage: spcd add|fetch|update|list|install|clean [args]` log/info spcd-cleanup ]
+:argc 0 =
+if

@@ -34,7 +34,7 @@
 { ----- str/reverse: pure-stack (acc src) loop ----- }
 
 [
-  dup str/empty?
+  dup str/empty? [str/_rev-empty?] @
   [ { else: src non-empty }
     dup 0 1 str/sub                  { acc src head }
     swap                             { acc head src }
@@ -46,7 +46,7 @@
     str/_rev-loop
   ]
   [ { then: src empty } drop ]
-  rot
+  str/_rev-empty?
   if
 ] [str/_rev-loop] @
 
@@ -56,14 +56,13 @@
 { ----- str/repeat: scratch-binding accumulator loop ----- }
 
 [
-  str/_rep-n 0 <=
   [ { else: still going }
     str/_rep-acc str/_rep-s str/cat [str/_rep-acc] @
     str/_rep-n 1 - [str/_rep-n] @
     str/_rep-loop
   ]
   [ { then: done } ]
-  rot
+  str/_rep-n 0 <=
   if
 ] [str/_rep-loop] @
 
@@ -82,13 +81,12 @@
   [str/_sw-p] @
   [str/_sw-s] @
   str/_sw-p str/len [str/_sw-plen] @
-  str/_sw-s str/len str/_sw-plen <
   [ { else: enough chars in s }
     str/_sw-s 0 str/_sw-plen str/sub
     str/_sw-p str/eq
   ]
   [ { then: s too short } false ]
-  rot
+  str/_sw-s str/len str/_sw-plen <
   if
 ] [str/starts-with?] @
 
@@ -99,7 +97,6 @@
   [str/_ew-p] @
   [str/_ew-s] @
   str/_ew-p str/len [str/_ew-plen] @
-  str/_ew-s str/len str/_ew-plen <
   [ { else: enough chars in s }
     str/_ew-s
     str/_ew-s str/len str/_ew-plen -
@@ -108,7 +105,7 @@
     str/_ew-p str/eq
   ]
   [ { then: s too short } false ]
-  rot
+  str/_ew-s str/len str/_ew-plen <
   if
 ] [str/ends-with?] @
 
@@ -116,10 +113,7 @@
 { ----- str/contains?: scratch-binding search loop ----- }
 
 [
-  str/_c-i str/_c-p str/len + str/_c-s str/len >
   [ { else: window in bounds }
-    str/_c-s str/_c-i str/_c-p str/len str/sub
-    str/_c-p str/eq
     [ { else: no match, advance i }
       str/_c-i 1 + [str/_c-i] @
       str/_c-loop
@@ -127,11 +121,12 @@
     [ { then: match }
       true [str/_c-result] @
     ]
-    rot
+    str/_c-s str/_c-i str/_c-p str/len str/sub
+    str/_c-p str/eq
     if
   ]
   [ { then: out of bounds, done } ]
-  rot
+  str/_c-i str/_c-p str/len + str/_c-s str/len >
   if
 ] [str/_c-loop] @
 
@@ -148,10 +143,7 @@
 { ----- str/index: like contains?, but records first index, else -1 ----- }
 
 [
-  str/_idx-i str/_idx-p str/len + str/_idx-s str/len >
   [ { else: window in bounds }
-    str/_idx-s str/_idx-i str/_idx-p str/len str/sub
-    str/_idx-p str/eq
     [ { else: no match, advance i }
       str/_idx-i 1 + [str/_idx-i] @
       str/_idx-loop
@@ -159,11 +151,12 @@
     [ { then: record index }
       str/_idx-i [str/_idx-result] @
     ]
-    rot
+    str/_idx-s str/_idx-i str/_idx-p str/len str/sub
+    str/_idx-p str/eq
     if
   ]
   [ { then: out of bounds, done } ]
-  rot
+  str/_idx-i str/_idx-p str/len + str/_idx-s str/len >
   if
 ] [str/_idx-loop] @
 
@@ -181,16 +174,14 @@
 
 [ { s -- s' }
   [str/_sn-s] @
-  str/_sn-s str/empty?
   [
     [ str/_sn-s ]
     [ str/_sn-s 0 str/_sn-s str/len 1 - str/sub ]
     str/_sn-s str/_sn-s str/len 1 - 1 str/sub `
 ` str/eq
-    rot
     if
   ]
   [ str/_sn-s ]
-  rot
+  str/_sn-s str/empty?
   if
 ] [str/strip-nl] @

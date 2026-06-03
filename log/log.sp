@@ -26,8 +26,8 @@
 
 [ { msg -- ; only emits when $SPACELANG_DEBUG is non-empty }
   [log/_d-m] @
-  `SPACELANG_DEBUG` :env str/len 0 =
-  [ ]
   [ `[debug] ` log/_d-m log/_emit ]
+  [ ]
+  `SPACELANG_DEBUG` :env str/len 0 =
   if
 ] [log/debug] @
