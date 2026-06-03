@@ -857,6 +857,38 @@ static void eval_word(const char *w) {
         return;
     }
 
+    /* :sh> — pop a string, run via /bin/sh -c, push captured stdout
+     * as a string. One trailing newline is stripped (matches $(...)).
+     * Stderr passes through to the parent. */
+    if (!strcmp(w, ":sh>")) {
+        Value *t = pop();
+        if (!t || t->type != V_STR) {
+            fprintf(stderr, ":sh>: expected string\n");
+            v_unref(t); push(v_str("")); return;
+        }
+        FILE *p = popen(t->as.str, "r");
+        if (!p) {
+            fprintf(stderr, ":sh>: popen failed: %s\n", strerror(errno));
+            v_unref(t); push(v_str("")); return;
+        }
+        size_t cap = 256, len = 0;
+        char *buf = malloc(cap);
+        for (;;) {
+            if (len + 1 >= cap) { cap *= 2; buf = realloc(buf, cap); }
+            size_t n = fread(buf + len, 1, cap - len - 1, p);
+            len += n;
+            if (n == 0) break;
+        }
+        pclose(p);
+        if (len > 0 && buf[len-1] == '\n') len--;
+        buf[len] = 0;
+        Value *r = v_str(buf);
+        free(buf);
+        v_unref(t);
+        push(r);
+        return;
+    }
+
     /* :sleep — pop a number (milliseconds), sleep that long */
     if (!strcmp(w, ":sleep")) {
         Value *t = pop();

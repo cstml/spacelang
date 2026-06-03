@@ -215,6 +215,27 @@ class TestEval(TimedTestCase):
         self.assertIn("hello-from-sh", out)
         self.assertIn("0", out)  # exit status
 
+    def test_sh_capture(self):
+        # :sh> pushes captured stdout as a string, trailing \n stripped.
+        out = self.eval('"echo hello-from-capture" :sh> .')
+        self.assertIn('"hello-from-capture"', out)
+
+    def test_sh_capture_no_trailing_newline(self):
+        # printf has no implicit newline; the captured string must match exactly.
+        out = self.eval('''"printf 'exact'" :sh> .''')
+        self.assertIn('"exact"', out)
+
+    def test_sh_capture_multiline(self):
+        # Internal newlines preserved; only the final one is stripped.
+        out = self.eval('"printf \'a\\nb\\nc\\n\'" :sh> str/len .')
+        # "a\nb\nc" → 5 bytes
+        self.assertIn("5", out)
+
+    def test_sh_capture_composable(self):
+        # The captured string flows into the rest of the language.
+        out = self.eval('"echo 41" :sh> eval 1 + .')
+        self.assertIn("42", out)
+
     def test_require(self):
         import tempfile as _tf
         with _tf.NamedTemporaryFile(mode="w", suffix=".sp", delete=False) as f:
