@@ -37,6 +37,7 @@
  */
 
 #define _POSIX_C_SOURCE 200809L
+#define _DEFAULT_SOURCE
 #include <stdio.h>
 #include <stdlib.h>
 #include <string.h>
@@ -46,6 +47,7 @@
 #include <libgen.h>
 #include <errno.h>
 #include <limits.h>
+#include <ctype.h>
 
 static void die(const char *msg) {
     fprintf(stderr, "spcc: %s\n", msg);
@@ -65,6 +67,172 @@ static char *slurp(const char *path, size_t *out_len) {
     fclose(f);
     if (out_len) *out_len = (size_t)n;
     return buf;
+}
+
+/* ---------- :require preprocessor ----------
+ *
+ * Resolves `"path" :require` statically: opens the referenced file,
+ * preprocesses it recursively, and inlines its contents. So compiled
+ * binaries are self-contained — no filesystem dependency at runtime.
+ *
+ * Errors out (with file:line) if :require's operand isn't a string
+ * literal, or if the referenced file can't be opened.
+ *
+ * Cycle-safe: each realpath is loaded at most once.
+ */
+
+typedef struct { char *data; size_t len, cap; } Buf;
+
+static void buf_grow(Buf *b, size_t need) {
+    if (b->len + need <= b->cap) return;
+    size_t c = b->cap ? b->cap : 256;
+    while (c < b->len + need) c *= 2;
+    b->data = realloc(b->data, c);
+    if (!b->data) die("oom");
+    b->cap = c;
+}
+static void buf_put(Buf *b, const char *s, size_t n) {
+    buf_grow(b, n + 1);
+    memcpy(b->data + b->len, s, n);
+    b->len += n;
+    b->data[b->len] = 0;
+}
+
+typedef struct { char **v; size_t n, cap; } VSet;
+static int vset_has(VSet *s, const char *p) {
+    for (size_t i = 0; i < s->n; i++) if (!strcmp(s->v[i], p)) return 1;
+    return 0;
+}
+static void vset_add(VSet *s, const char *p) {
+    if (s->n == s->cap) { s->cap = s->cap ? s->cap*2 : 8; s->v = realloc(s->v, s->cap * sizeof *s->v); }
+    s->v[s->n++] = strdup(p);
+}
+
+static char *join_path(const char *dir, const char *rel) {
+    if (rel[0] == '/') return strdup(rel);
+    size_t dn = strlen(dir), rn = strlen(rel);
+    char *r = malloc(dn + 1 + rn + 1);
+    memcpy(r, dir, dn);
+    r[dn] = '/';
+    memcpy(r + dn + 1, rel, rn + 1);
+    return r;
+}
+
+static void preprocess(const char *path, VSet *visited, Buf *out);
+
+/* Process src buffer from `path` into `out`. dir = directory of path (for relative requires). */
+static void preprocess_buf(const char *path, const char *dir,
+                           const char *src, size_t n,
+                           VSet *visited, Buf *out) {
+    size_t i = 0, line = 1;
+
+    /* Tokens that can precede :require. We only care about the last one. */
+    int   last_was_string = 0;
+    char *last_string     = NULL;
+    size_t last_string_line = 0;
+    size_t last_string_out_start = 0;  /* where we wrote it in `out` */
+
+    while (i < n) {
+        unsigned char c = (unsigned char)src[i];
+
+        /* whitespace */
+        if (isspace(c)) {
+            if (c == '\n') line++;
+            buf_put(out, (char*)&c, 1);
+            i++;
+            continue;
+        }
+        /* comment { ... } (non-nesting, matches spci tokenizer) */
+        if (c == '{') {
+            size_t start = i;
+            while (i < n && src[i] != '}') { if (src[i] == '\n') line++; i++; }
+            if (i < n) i++;
+            buf_put(out, src + start, i - start);
+            continue;
+        }
+        /* strings */
+        if (c == '"' || c == '\'') {
+            char q = c;
+            size_t start = i++;
+            size_t str_line = line;
+            while (i < n && src[i] != q) { if (src[i] == '\n') line++; i++; }
+            if (i >= n) {
+                fprintf(stderr, "spcc: %s:%zu: unterminated string\n", path, str_line);
+                exit(1);
+            }
+            size_t end = i;
+            i++; /* closer */
+            free(last_string);
+            last_string = malloc(end - (start + 1) + 1);
+            memcpy(last_string, src + start + 1, end - (start + 1));
+            last_string[end - (start + 1)] = 0;
+            last_was_string = 1;
+            last_string_line = str_line;
+            last_string_out_start = out->len;
+            buf_put(out, src + start, i - start);
+            continue;
+        }
+        /* single-char structural */
+        if (c == '[' || c == ']') {
+            buf_put(out, (char*)&c, 1);
+            i++;
+            last_was_string = 0;
+            continue;
+        }
+        /* word: read until whitespace or structural */
+        size_t start = i;
+        while (i < n) {
+            unsigned char wc = (unsigned char)src[i];
+            if (isspace(wc) || wc == '[' || wc == ']' || wc == '{' || wc == '"' || wc == '\'') break;
+            i++;
+        }
+        size_t wlen = i - start;
+
+        if (wlen == 8 && !memcmp(src + start, ":require", 8)) {
+            if (!last_was_string) {
+                fprintf(stderr,
+                    "spcc: %s:%zu: :require expects a string literal as its operand\n",
+                    path, line);
+                exit(1);
+            }
+            char *resolved = join_path(dir, last_string);
+            char real[PATH_MAX];
+            if (!realpath(resolved, real)) {
+                fprintf(stderr, "spcc: %s:%zu: :require cannot open '%s': %s\n",
+                        path, last_string_line, last_string, strerror(errno));
+                exit(1);
+            }
+            free(resolved);
+            /* Drop the string literal we emitted; replace with file contents. */
+            out->len = last_string_out_start;
+            out->data[out->len] = 0;
+            buf_put(out, "\n", 1);
+            if (!vset_has(visited, real)) {
+                vset_add(visited, real);
+                preprocess(real, visited, out);
+            }
+            buf_put(out, "\n", 1);
+            last_was_string = 0;
+            free(last_string); last_string = NULL;
+            continue;
+        }
+
+        buf_put(out, src + start, wlen);
+        last_was_string = 0;
+    }
+    free(last_string);
+    (void)last_string_line;
+}
+
+static void preprocess(const char *path, VSet *visited, Buf *out) {
+    size_t n = 0;
+    char *src = slurp(path, &n);
+    char *dup = strdup(path);
+    char *dir = strdup(dirname(dup));
+    free(dup);
+    preprocess_buf(path, dir, src, n, visited, out);
+    free(dir);
+    free(src);
 }
 
 static int file_exists(const char *path) {
@@ -218,8 +386,19 @@ int main(int argc, char **argv) {
         }
     }
 
-    size_t sp_len = 0;
-    char *sp_src = slurp(input, &sp_len);
+    VSet visited = {0};
+    Buf pp = {0};
+    char real_in[PATH_MAX];
+    if (!realpath(input, real_in)) {
+        fprintf(stderr, "spcc: cannot open '%s': %s\n", input, strerror(errno));
+        return 1;
+    }
+    vset_add(&visited, real_in);
+    preprocess(real_in, &visited, &pp);
+    char *sp_src = pp.data ? pp.data : strdup("");
+    size_t sp_len = pp.len;
+    for (size_t i = 0; i < visited.n; i++) free(visited.v[i]);
+    free(visited.v);
 
     if (emit_c_only) {
         emit(stdout, sp_src, sp_len, bake_name);

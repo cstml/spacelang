@@ -323,6 +323,93 @@ class TestCompile(TimedTestCase):
         self.assertIn("1\n1\n2\n3\n5\n8", p.stdout)
 
 
+# ── :require preprocessor (spcc inlines required files) ──────────────
+
+class TestRequirePreprocess(TimedTestCase):
+    """spcc statically inlines `"path" :require` so compiled binaries
+    are self-contained. Errors out (with file:line) on non-string
+    operand or missing file."""
+
+    def setUp(self):
+        self.tmp = tempfile.mkdtemp()
+
+    def tearDown(self):
+        shutil.rmtree(self.tmp, ignore_errors=True)
+
+    def write(self, name, text):
+        p = Path(self.tmp) / name
+        p.write_text(text)
+        return p
+
+    def test_inlines_library(self):
+        """`:require`d file is embedded — compiled binary has no fs dep."""
+        self.write("lib.sp", "[ 7 ] [seven] @\n")
+        main = self.write("main.sp", '"lib.sp" :require seven .\n')
+        bin_path = str(Path(self.tmp) / "out")
+        r = spcc_compile(main, bin_path)
+        self.assertEqual(r.returncode, 0, r.stderr)
+        # Move the binary AWAY from lib.sp and confirm it still works.
+        elsewhere = tempfile.mkdtemp()
+        try:
+            moved = Path(elsewhere) / "out"
+            shutil.move(bin_path, moved)
+            p = subprocess.run([str(moved)], capture_output=True, text=True, timeout=3)
+            self.assertEqual(p.returncode, 0, p.stderr)
+            self.assertIn("7", p.stdout)
+        finally:
+            shutil.rmtree(elsewhere, ignore_errors=True)
+
+    def test_recursive_require(self):
+        """A required file may itself :require another."""
+        self.write("a.sp", "[ 1 ] [one] @\n")
+        self.write("b.sp", '"a.sp" :require [ one 1 + ] [two] @\n')
+        main = self.write("main.sp", '"b.sp" :require two .\n')
+        bin_path = str(Path(self.tmp) / "out")
+        r = spcc_compile(main, bin_path)
+        self.assertEqual(r.returncode, 0, r.stderr)
+        p = subprocess.run([bin_path], capture_output=True, text=True, timeout=3)
+        self.assertIn("2", p.stdout)
+
+    def test_cycle_safe(self):
+        """Mutual requires don't infinite-loop; each file loaded once."""
+        self.write("a.sp", '"b.sp" :require [ 1 ] [a-marker] @\n')
+        self.write("b.sp", '"a.sp" :require [ 2 ] [b-marker] @\n')
+        main = self.write("main.sp", '"a.sp" :require a-marker . b-marker .\n')
+        bin_path = str(Path(self.tmp) / "out")
+        r = spcc_compile(main, bin_path)
+        self.assertEqual(r.returncode, 0, r.stderr)
+        p = subprocess.run([bin_path], capture_output=True, text=True, timeout=3)
+        self.assertIn("1", p.stdout)
+        self.assertIn("2", p.stdout)
+
+    def test_error_non_string_operand(self):
+        """:require with a non-string operand is rejected at compile time
+        with file:line context."""
+        main = self.write("main.sp",
+            "{ comment }\n"
+            "1 2 + :require\n")        # line 2 has the bad :require
+        bin_path = str(Path(self.tmp) / "out")
+        r = spcc_compile(main, bin_path)
+        self.assertNotEqual(r.returncode, 0)
+        self.assertIn(":require", r.stderr)
+        self.assertIn("string literal", r.stderr)
+        self.assertIn(f"{main}:2", r.stderr)
+
+    def test_error_missing_file(self):
+        """Missing :require target is rejected at compile time with
+        the file:line of the offending string literal."""
+        main = self.write("main.sp",
+            "{ a header }\n"
+            "{ another }\n"
+            '"nope-does-not-exist.sp" :require\n')   # line 3
+        bin_path = str(Path(self.tmp) / "out")
+        r = spcc_compile(main, bin_path)
+        self.assertNotEqual(r.returncode, 0)
+        self.assertIn(":require", r.stderr)
+        self.assertIn("nope-does-not-exist.sp", r.stderr)
+        self.assertIn(f"{main}:3", r.stderr)
+
+
 # ── property tests: random term sequences ─────────────────────────────
 
 TERMS = [
@@ -598,6 +685,7 @@ if __name__ == "__main__":
     if args.quick:
         suite.addTests(loader.loadTestsFromTestCase(TestEval))
         suite.addTests(loader.loadTestsFromTestCase(TestCompile))
+        suite.addTests(loader.loadTestsFromTestCase(TestRequirePreprocess))
         suite.addTests(loader.loadTestsFromTestCase(TestProperty))
     elif args.tests:
         for name in args.tests:
@@ -605,6 +693,7 @@ if __name__ == "__main__":
     else:
         suite.addTests(loader.loadTestsFromTestCase(TestEval))
         suite.addTests(loader.loadTestsFromTestCase(TestCompile))
+        suite.addTests(loader.loadTestsFromTestCase(TestRequirePreprocess))
         suite.addTests(loader.loadTestsFromTestCase(TestProperty))
         suite.addTests(loader.loadTestsFromTestCase(TestMesh))
 
