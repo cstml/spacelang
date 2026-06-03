@@ -9,3 +9,4 @@
 "github.com/cstml/spacelang/stdlib/fmap.sp"       :require
 "github.com/cstml/spacelang/stdlib/git.sp"        :require
 "github.com/cstml/spacelang/stdlib/with-spco.sp"  :require
+"github.com/cstml/spacelang/stdlib/test.sp"       :require

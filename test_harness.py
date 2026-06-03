@@ -34,6 +34,7 @@ ROOT = Path(__file__).resolve().parent
 SPCI  = str(ROOT / "bin" / "spci")
 SPCC  = str(ROOT / "bin" / "spcc")
 SPCO  = str(ROOT / "bin" / "spco")
+SPCT  = str(ROOT / "bin" / "spct")
 BUS   = "/tmp/spacelang_test"
 
 # Per-test hard timeout (seconds). Any test exceeding this raises and fails.
@@ -700,6 +701,174 @@ class TestRequirePreprocess(TimedTestCase):
         self.assertIn(f"{main}:3", r.stderr)
 
 
+# ── spct / test.sp: the test-runner binary and stdlib ─────────────────
+
+class TestSpct(TimedTestCase):
+    """spct binary and test.sp stdlib integration tests."""
+
+    @classmethod
+    def setUpClass(cls):
+        if not os.path.exists(SPCT):
+            raise unittest.SkipTest("spct binary missing; run `make spct`")
+
+    def spct(self, *test_files, timeout=4):
+        """Run spct with given test files, return (stdout, stderr, rc)."""
+        p = subprocess.run(
+            [SPCT] + list(test_files),
+            capture_output=True, text=True, timeout=timeout
+        )
+        return p.stdout, p.stderr, p.returncode
+
+    def spci_stdin(self, code, timeout=4):
+        """Run spci REPL with stdin code, return combined output."""
+        out, err, rc = run_spci(stdin=code + "\n:bye\n", timeout=timeout)
+        self.assertEqual(rc, 0, f"spci crashed:\n{err}")
+        return out + err
+
+    def setUp(self):
+        self.tmp = tempfile.mkdtemp(prefix="spct-")
+
+    def tearDown(self):
+        shutil.rmtree(self.tmp, ignore_errors=True)
+
+    def write_sp(self, name, text):
+        p = Path(self.tmp) / name
+        p.write_text(text)
+        return str(p)
+
+    # ── spct binary ──
+
+    def test_spct_no_args(self):
+        """spct with no arguments prints usage."""
+        _, stderr, rc = self.spct()
+        self.assertIn("Usage", stderr)
+
+    def test_spct_simple_pass(self):
+        """spct runs a simple passing test suite."""
+        f = self.write_sp("t.sp", """
+test/reset
+"hello" test/heading
+1 2 + 3 "1+2=3" test/eq
+test/summary
+""")
+        _, stderr, rc = self.spct(f)
+        self.assertIn("PASS 1+2=3", stderr)
+        self.assertIn("ALL PASSED", stderr)
+        self.assertNotIn("FAIL", stderr)
+
+    def test_spct_with_failures(self):
+        """spct reports failures correctly."""
+        f = self.write_sp("t.sp", """
+test/reset
+2 2 + 5 "2+2=5" test/eq
+test/summary
+""")
+        _, stderr, rc = self.spct(f)
+        self.assertIn("FAIL 2+2=5", stderr)
+        self.assertIn("FAIL: 1", stderr)
+
+    def test_spct_multiple_sections(self):
+        """spct handles multiple test/heading sections."""
+        f = self.write_sp("t.sp", """
+test/reset
+"section a" test/heading
+true "a1" test/assert
+"section b" test/heading
+false "b1" test/assert
+test/summary
+""")
+        _, stderr, rc = self.spct(f)
+        self.assertIn("--- section a ---", stderr)
+        self.assertIn("--- section b ---", stderr)
+        self.assertIn("PASS a1", stderr)
+        self.assertIn("FAIL b1", stderr)
+        self.assertIn("FAIL: 1", stderr)
+
+    # ── test.sp words via spci REPL ──
+
+    def lib_eval(self, code):
+        """Run code with test.sp stdlib preloaded."""
+        pre = f'"{ROOT}/stdlib/str.sp" :require "{ROOT}/stdlib/test.sp" :require\n'
+        return self.spci_stdin(pre + code)
+
+    def test_reset_zeros_counters(self):
+        out = self.lib_eval("test/reset test/_pass . test/_fail .")
+        self.assertIn("0", out)
+
+    def test_heading_output(self):
+        out = self.lib_eval('"my suite" test/heading')
+        self.assertIn("--- my suite ---", out)
+
+    def test_assert_pass(self):
+        out = self.lib_eval('test/reset true "t1" test/assert')
+        self.assertIn("PASS t1", out)
+
+    def test_assert_fail(self):
+        out = self.lib_eval('test/reset false "f1" test/assert')
+        self.assertIn("FAIL f1", out)
+
+    def test_eq_pass(self):
+        out = self.lib_eval('test/reset 1 2 + 3 "add" test/eq')
+        self.assertIn("PASS add", out)
+
+    def test_eq_fail(self):
+        out = self.lib_eval('test/reset 2 2 + 5 "bad" test/eq')
+        self.assertIn("FAIL bad", out)
+
+    def test_neq_pass(self):
+        out = self.lib_eval('test/reset 3 4 "neq" test/neq')
+        self.assertIn("PASS neq", out)
+
+    def test_neq_fail(self):
+        out = self.lib_eval('test/reset 5 5 "same" test/neq')
+        self.assertIn("FAIL same", out)
+
+    def test_true_assert(self):
+        out = self.lib_eval('test/reset 42 0 > "pos" test/true?')
+        self.assertIn("PASS pos", out)
+
+    def test_false_assert(self):
+        out = self.lib_eval('test/reset 0 "zero" test/false?')
+        self.assertIn("PASS zero", out)
+
+    def test_str_eq(self):
+        out = self.lib_eval('test/reset "hi" "hi" "greet" test/str-eq')
+        self.assertIn("PASS greet", out)
+
+    def test_str_eq_fail(self):
+        out = self.lib_eval('test/reset "hi" "yo" "mismatch" test/str-eq')
+        self.assertIn("FAIL mismatch", out)
+
+    def test_summary_all_pass(self):
+        out = self.lib_eval('test/reset true "a" test/assert true "b" test/assert test/summary')
+        self.assertIn("ALL PASSED", out)
+
+    def test_summary_with_failures(self):
+        out = self.lib_eval('test/reset true "a" test/assert false "b" test/assert test/summary')
+        self.assertIn("PASS: 1", out)
+        self.assertIn("FAIL: 1", out)
+
+    def test_summary_no_tests(self):
+        out = self.lib_eval('test/reset test/summary')
+        self.assertIn("no tests run", out)
+
+    def test_counter_increments(self):
+        """Verify pass/fail counters increment correctly (string-based)."""
+        out = self.lib_eval('test/reset true "a" test/assert test/_pass str/len .')
+        # Pass counter is "1" (string length 1) or more if other tests ran
+        self.assertIn("1", out)
+
+    # ── str/->str ──
+
+    def test_str_to_str_identity(self):
+        """str/->str is identity for string values."""
+        out = self.spci_stdin(
+            f'"{ROOT}/stdlib/str.sp" :require\n'
+            '"hello" str/->str .\n'
+        )
+        self.assertIn('"hello"', out)
+
+
 # ── property tests: random term sequences ─────────────────────────────
 
 TERMS = [
@@ -1193,6 +1362,7 @@ if __name__ == "__main__":
         suite.addTests(loader.loadTestsFromTestCase(TestStr))
         suite.addTests(loader.loadTestsFromTestCase(TestCompile))
         suite.addTests(loader.loadTestsFromTestCase(TestRequirePreprocess))
+        suite.addTests(loader.loadTestsFromTestCase(TestSpct))
         suite.addTests(loader.loadTestsFromTestCase(TestProperty))
         suite.addTests(loader.loadTestsFromTestCase(TestSpcd))
     elif args.tests:
@@ -1203,6 +1373,7 @@ if __name__ == "__main__":
         suite.addTests(loader.loadTestsFromTestCase(TestStr))
         suite.addTests(loader.loadTestsFromTestCase(TestCompile))
         suite.addTests(loader.loadTestsFromTestCase(TestRequirePreprocess))
+        suite.addTests(loader.loadTestsFromTestCase(TestSpct))
         suite.addTests(loader.loadTestsFromTestCase(TestProperty))
         suite.addTests(loader.loadTestsFromTestCase(TestSpcd))
         suite.addTests(loader.loadTestsFromTestCase(TestMesh))

@@ -185,3 +185,10 @@
   str/_sn-s str/empty?
   if
 ] [str/strip-nl] @
+
+
+{ ----- str/->str: convert a value to its string representation.        }
+{ TODO: currently only works for values that are already strings.      }
+{ For numbers, store counters as strings and use shell expr.           }
+
+[ { v -- str } ] [str/->str] @

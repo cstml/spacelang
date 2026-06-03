@@ -8,7 +8,7 @@ INCDIR  = $(PREFIX)/include
 SPC_VERSION = v0.0.1
 CFLAGS = -O2 -Wall -Wextra -Iinclude -DSPC_VERSION=\"$(SPC_VERSION)\"
 
-all: bin/spci bin/spcc bin/spco bin/spcd lib/libspci.a
+all: bin/spci bin/spcc bin/spco bin/spcd bin/spct lib/libspci.a
 
 bin lib build:
 	mkdir -p $@
@@ -33,19 +33,24 @@ bin/spcd: spcd/spcd.sp spcd/dep.sp \
           bin/spcc lib/libspci.a include/spci.h | bin
 	./bin/spcc --as spcd spcd/spcd.sp -o $@
 
+bin/spct: spct/spct.sp stdlib/test.sp stdlib/str.sp \
+          bin/spcc lib/libspci.a include/spci.h | bin
+	./bin/spcc spct/spct.sp -o $@
+
 install: all
 	install -d $(DESTDIR)$(BINDIR) $(DESTDIR)$(LIBDIR) $(DESTDIR)$(INCDIR)
-	install -m 755 bin/spci bin/spcc bin/spco bin/spcd $(DESTDIR)$(BINDIR)
+	install -m 755 bin/spci bin/spcc bin/spco bin/spcd bin/spct $(DESTDIR)$(BINDIR)
 	install -m 644 lib/libspci.a $(DESTDIR)$(LIBDIR)
 	install -m 644 include/spci.h $(DESTDIR)$(INCDIR)
 
 uninstall:
 	rm -f $(DESTDIR)$(BINDIR)/spci $(DESTDIR)$(BINDIR)/spcc \
 	      $(DESTDIR)$(BINDIR)/spco $(DESTDIR)$(BINDIR)/spcd \
+	      $(DESTDIR)$(BINDIR)/spct \
 	      $(DESTDIR)$(LIBDIR)/libspci.a $(DESTDIR)$(INCDIR)/spci.h
 
 clean:
-	rm -rf bin/spci bin/spcc bin/spco bin/spcd build/runtime.o lib/libspci.a
+	rm -rf bin/spci bin/spcc bin/spco bin/spcd bin/spct build/runtime.o lib/libspci.a
 
 test:
 	python3 test_harness.py
