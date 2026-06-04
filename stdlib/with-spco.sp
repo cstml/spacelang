@@ -9,7 +9,7 @@
 {   spco/$!   term [name] --               like $!  but ensures peer  }
 {   spco/$?   term [name] timeout-ms --    like $?  but ensures peer  }
 {                                                                     }
-{ Example:  "with-spco.sp" :require    "hi" [B] spco/$                }
+{ Example:  "with-spco.sp" require    "hi" [B] spco/$                }
 
 { Internal: name -- thunk that pushes the name string then calls      }
 { spawn-node. We build the source as text, then `eval` parses it into }
@@ -21,10 +21,10 @@
 { Internal: ask spco to ensure [name] is up, then briefly sleep.      }
 { Stack effect: [name] -- [name]  (consumes net 0; [name] preserved)  }
 [
-  dup name>str         { [name] "name" }
+  dup wo/name>str         { [name] "name" }
   _spco-src            { [name] thunk }
   "spco" $!            { [name] -- (EVAL sent) }
-  500 :sleep
+  500 sleep
 ] [_spco-ensure] @
 
 { Public: spco-aware versions of $, $!, $?                            }

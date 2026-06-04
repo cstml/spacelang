@@ -193,10 +193,10 @@ static void preprocess_buf(const char *path, const char *dir,
         }
         size_t wlen = i - start;
 
-        if (wlen == 8 && !memcmp(src + start, ":require", 8)) {
+        if (wlen == 7 && !memcmp(src + start, "require", 7)) {
             if (!last_was_string) {
                 fprintf(stderr,
-                    "spcc: %s:%zu: :require expects a string literal as its operand\n",
+                    "spcc: %s:%zu: require expects a string literal as its operand\n",
                     path, line);
                 exit(1);
             }
@@ -210,7 +210,7 @@ static void preprocess_buf(const char *path, const char *dir,
             char *via_ovr = spc_resolve_via_overrides(last_string, &g_overrides);
             char *resolved = via_ovr ? via_ovr : join_path(dir, last_string);
             if (!realpath(resolved, real)) {
-                fprintf(stderr, "spcc: %s:%zu: :require cannot open '%s': %s\n",
+                fprintf(stderr, "spcc: %s:%zu: require cannot open '%s': %s\n",
                         path, last_string_line, last_string, strerror(errno));
                 exit(1);
             }

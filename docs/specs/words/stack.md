@@ -1,4 +1,4 @@
-# `:s`
+# `_s`
 
 **Category:** Keywords  
 **Stack:** ` -- `  
@@ -8,7 +8,7 @@ Prints the current stack contents to stdout without modifying it.
 
 ## Examples
 ```
-> 1 2 3 :s
+> 1 2 3 _s
 -- stack (3) --
   [0] 1
   [1] 2

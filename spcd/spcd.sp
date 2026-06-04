@@ -9,7 +9,7 @@
 {   spcd list            print lock.sp contents                            }
 {   spcd clean           rm -rf spcd_lib/                                       }
 
-"dep.sp" :require
+"dep.sp" require
 
 
 { ===================================================================
@@ -349,19 +349,19 @@ spcd-set-todo
   =================================================================== }
 
 [
-  1 :argv [inst-url] @
+  1 io/argv [inst-url] @
   [
     inst-url parse-at [inst-r] @ [inst-u] @
 
     inst-u git/url-basename [inst-bn] @
 
     { bindir: $SPACELANG_BIN or $HOME/.local/bin }
-    `SPACELANG_BIN` :env [inst-bin] @
+    `SPACELANG_BIN` io/env [inst-bin] @
     [ ]
     [
-      [ `HOME` :env `/.local/bin` str/cat [inst-bin] @ ]
+      [ `HOME` io/env `/.local/bin` str/cat [inst-bin] @ ]
       [ `spcd: cannot determine install dir; set SPACELANG_BIN` log/info spcd-cleanup ]
-      `HOME` :env str/len 0 =
+      `HOME` io/env str/len 0 =
       if
     ]
     inst-bin str/len 0 =
@@ -409,7 +409,7 @@ spcd-set-todo
   =================================================================== }
 
 [
-  1 :argv [add--a] @
+  1 io/argv [add--a] @
   [
     add--a parse-at [add--r] @ [add--u] @
     [
@@ -436,7 +436,7 @@ spcd-set-todo
   =================================================================== }
 
 [
-  0 :argv [verb] @
+  0 io/argv [verb] @
   [
     [
       [
@@ -462,5 +462,5 @@ spcd-set-todo
 
 [ dispatch ]
 [ `Usage: spcd add|fetch|update|list|install|clean [args]` log/info spcd-cleanup ]
-:argc 0 =
+io/argc 0 =
 if

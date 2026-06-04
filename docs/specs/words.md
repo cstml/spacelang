@@ -52,9 +52,9 @@ One file per built-in word. Each spec covers stack effect, semantics, an example
 - [`$`](words/send.md)
 - [`$!`](words/send-bang.md)
 - [`$?`](words/send-sync.md)
-- [`spco/$`](words/spco-send.md)
-- [`spco/$!`](words/spco-send-bang.md)
-- [`spco/$?`](words/spco-send-sync.md)
+- [`sp/bus`](words/bus.md)
+- [`sp/exists?`](words/exists.md)
+- [`sp/alive?`](words/alive.md)
 
 ## Shell
 
@@ -72,34 +72,24 @@ One file per built-in word. Each spec covers stack effect, semantics, an example
 - [`str/chr`](words/str-chr.md)
 - [`str/eq`](words/str-eq.md)
 
-## Strings (lib)
+## System
 
-- [`str/empty?`](words/str-empty.md)
-- [`str/head`](words/str-head.md)
-- [`str/tail`](words/str-tail.md)
-- [`str/reverse`](words/str-reverse.md)
-- [`str/repeat`](words/str-repeat.md)
-- [`str/starts-with?`](words/str-starts-with.md)
-- [`str/ends-with?`](words/str-ends-with.md)
-- [`str/contains?`](words/str-contains.md)
-- [`str/index`](words/str-index.md)
-- [`str/strip-nl`](words/str-strip-nl.md)
+- [`_s`](words/stack.md)
+- [`bye!`](words/bye.md)
+- [`sleep`](words/sleep.md)
+- [`require`](words/require.md)
+- [`log`](words/log.md)
 
-## Keywords
+## Process (io/)
 
-- [`:s`](words/stack.md)
-- [`:bye`](words/bye.md)
-- [`:sleep`](words/sleep.md)
-- [`:require`](words/require.md)
-- [`:log`](words/log.md)
-- [`:bus`](words/bus.md)
-- [`:env`](words/env.md)
-- [`:argc`](words/argc.md)
-- [`:argv`](words/argv.md)
-- [`:exists`](words/exists.md)
-- [`:alive`](words/alive.md)
-- [`name>str`](words/name-to-str.md)
-- [`str>name`](words/str-to-name.md)
+- [`io/env`](words/env.md)
+- [`io/argc`](words/argc.md)
+- [`io/argv`](words/argv.md)
+
+## Words (wo/)
+
+- [`wo/name>str`](words/name-to-str.md)
+- [`wo/str>name`](words/str-to-name.md)
 
 ## Literals
 

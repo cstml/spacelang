@@ -1,4 +1,4 @@
-# `:log`
+# `log`
 
 **Category:** Keywords  
 **Stack:** `msg -- `  
@@ -8,7 +8,7 @@ Writes `msg` to stderr with a trailing newline.
 
 ## Examples
 ```
-> `processing...` :log
+> `processing...` log
 ```
 
 ## Errors / notes

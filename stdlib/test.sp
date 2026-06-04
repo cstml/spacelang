@@ -16,10 +16,10 @@
 {   test/str-eq      actual expected "nm"  assert two strings are =           }
 {   test/summary                            print X pass, Y fail              }
 {                                                                            }
-{ Uses :log (built-in) for output. Requires str.sp for str/cat.              }
+{ Uses log (built-in) for output. Requires str.sp for str/cat.              }
 { Counters use scratch bindings and are NOT reentrant.                        }
 
-"github.com/cstml/spacelang/stdlib/str.sp" :require
+"github.com/cstml/spacelang/stdlib/str.sp" require
 
 
 { --- internal helpers --- }
@@ -44,11 +44,11 @@
   [test/_r-label] @
   [ { else: fail }
     test/_nok
-    `  FAIL ` test/_r-label str/cat :log
+    `  FAIL ` test/_r-label str/cat log
   ]
   [ { then: pass }
     test/_ok
-    `  PASS ` test/_r-label str/cat :log
+    `  PASS ` test/_r-label str/cat log
   ]
   test/_r-ok
   if
@@ -65,8 +65,8 @@
 
 { test/heading: print a section heading }
 [ { title -- }
-  `` :log
-  `--- ` swap str/cat ` ---` str/cat :log
+  `` log
+  `--- ` swap str/cat ` ---` str/cat log
 ] [test/heading] @
 
 { test/assert: bool "name" -- }
@@ -120,23 +120,23 @@
 [ { -- }
   test/_pass [test/_s-p] @
   test/_fail [test/_s-f] @
-  `` :log
-  `=========================` :log
+  `` log
+  `=========================` log
   test/_s-f `0` str/eq
   [ { else: failures exist }
     `  PASS: ` test/_s-p str/cat `  FAIL: ` str/cat
-    test/_s-f str/cat :log
+    test/_s-f str/cat log
   ]
   [ { then: no failures, check pass count }
     test/_s-p `0` str/eq test/_not
     [ { else: no tests run }
-      `  (no tests run)` :log
+      `  (no tests run)` log
     ]
     [ { then: all passed }
-      `  ALL PASSED (` test/_s-p str/cat `)` str/cat :log
+      `  ALL PASSED (` test/_s-p str/cat `)` str/cat log
     ]
     rot if
   ]
   rot if
-  `=========================` :log
+  `=========================` log
 ] [test/summary] @

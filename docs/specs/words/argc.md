@@ -1,4 +1,4 @@
-# `:argc`
+# `io/argc`
 
 **Category:** Keywords  
 **Stack:** ` -- n`  
@@ -9,6 +9,6 @@ Pushes the count of user arguments (those after `--` on the command line, or eve
 ## Examples
 ```
 $ ./prog a b c
-> :argc .
+> io/argc .
 3
 ```

@@ -73,12 +73,12 @@ spcc spct.sp -o spct
 
 It does three things:
 
-1. `:require`s `str.sp` and `test.sp` (inlined at compile time)
-2. Checks `:argc` — if zero, prints usage
-3. If arguments are present, loops over `:argv` indices, `cat`s each file
+1. `require`s `str.sp` and `test.sp` (inlined at compile time)
+2. Checks `io/argc` — if zero, prints usage
+3. If arguments are present, loops over `io/argv` indices, `cat`s each file
    through `sh/>`, and `eval`s the result
 
-Since `spcc` cannot inline runtime `:require` calls, dynamic file loading uses
+Since `spcc` cannot inline runtime `require` calls, dynamic file loading uses
 `cat <file>` piped to `eval`.
 
 ## Dependencies
@@ -91,7 +91,7 @@ Since `spcc` cannot inline runtime `:require` calls, dynamic file loading uses
 | | `spci` | `spct` |
 |---|---|---|
 | Mode | REPL / batch / mesh | batch test runner |
-| Requires explicit `:require` | yes | no — test.sp preloaded |
+| Requires explicit `require` | yes | no — test.sp preloaded |
 | Auto `test/reset` | no | no — files control lifecycle |
 | Auto `test/summary` | no | no — files control lifecycle |
 | Multiple files | run each sequentially | run each sequentially |
@@ -99,7 +99,7 @@ Since `spcc` cannot inline runtime `:require` calls, dynamic file loading uses
 You can achieve the same result with `spci`:
 
 ```bash
-$ spci -c '"stdlib/test.sp" :require test/reset ... test/summary'
+$ spci -c '"stdlib/test.sp" require test/reset ... test/summary'
 ```
 
 `spct` is a convenience — it bundles the require and provides a cleaner CLI.

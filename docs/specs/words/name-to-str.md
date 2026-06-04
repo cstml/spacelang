@@ -1,4 +1,4 @@
-# `name>str`
+# `wo/name>str`
 
 **Category:** Keywords  
 **Stack:** `[name] -- s`  
@@ -8,7 +8,7 @@ Extracts a name from a one-word thunk binding form and pushes it as a string.
 
 ## Examples
 ```
-> [my-peer] name>str .
+> [my-peer] wo/name>str .
 "my-peer"
 ```
 

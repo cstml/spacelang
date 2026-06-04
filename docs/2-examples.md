@@ -58,7 +58,7 @@ Driver still runs spacelang locally — nothing was sent.
 Nothing visible. The frame went to W1; W1 pushed the string and is now silent again. To inspect:
 
 ```
-> [:s] [W1] $!
+> [_s] [W1] $!
 ```
 
 W1's terminal now prints its stack:
@@ -86,7 +86,7 @@ The thunk `[1 2 + 10 * .]` is evaluated *on W2* — the `.` at the end prints on
 
 ```
 > "ping" [W1] $   "ping" [W2] $   "ping" [W3] $
-> [:s] [W1] $!   [:s] [W2] $!   [:s] [W3] $!
+> [_s] [W1] $!   [_s] [W2] $!   [_s] [W3] $!
 ```
 
 Each worker prints its stack with `"ping"` at the top.
@@ -114,7 +114,7 @@ No listener at `/tmp/spacelang/Nobody.sock`, so connect fails fast and `$?` push
 ```
 > [[1 2 +] [adder] @] [W3] $!     { teach W3 the word 'adder' }
 > [adder !] [W3] $!               { ask W3 to run it }
-> [:s] [W3] $!                    { show W3's stack }
+> [_s] [W3] $!                    { show W3's stack }
 ```
 
 W3's stack now has `3` on top. The word `adder` lives on W3, not on the driver — closures don't cross processes (see caveats below).
@@ -145,10 +145,10 @@ If W1 acked, `t` is on the stack → `if` takes the "then" branch and `W1-ok` is
 | Push value `X` to W1's stack | `X [W1] $` |
 | Run thunk `T` on W1 | `T [W1] $!` |
 | Same, but wait for ack (timeout 500ms) | `T [W1] 500 $?` |
-| Show W1's stack (on W1's terminal) | `[:s] [W1] $!` |
+| Show W1's stack (on W1's terminal) | `[_s] [W1] $!` |
 | Bind word `w` on W1 | `[V [w] @] [W1] $!` |
 | Describe word `w` on W1 | `[[w] ~] [W1] $!` |
-| Quit driver only | `:bye` |
+| Quit driver only | `bye!` |
 | Discover live workers | `ls /tmp/spacelang/` (from shell) |
 
 ## tmux convenience

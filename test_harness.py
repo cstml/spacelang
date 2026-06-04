@@ -115,7 +115,7 @@ class TestEval(TimedTestCase):
     """Language semantics — run via spci REPL and check output."""
 
     def eval(self, code):
-        out, err, rc = run_spci(stdin=code + "\n:bye\n")
+        out, err, rc = run_spci(stdin=code + "\nbye!\n")
         self.assertEqual(rc, 0, f"spci crashed:\n{err}")
         return out
 
@@ -217,7 +217,7 @@ class TestEval(TimedTestCase):
         self.assertIn("+", out)
 
     def test_stack_print(self):
-        out = self.eval("1 2 3 :s")
+        out = self.eval("1 2 3 _s")
         self.assertIn("-- stack (3) --", out)
         self.assertIn("1", out)
         self.assertIn("2", out)
@@ -242,7 +242,7 @@ class TestEval(TimedTestCase):
 
     def test_sleep(self):
         t0 = time.time()
-        self.eval("200 :sleep")
+        self.eval("200 sleep")
         self.assertGreaterEqual(time.time() - t0, 0.18)
 
     def test_sh(self):
@@ -327,25 +327,25 @@ class TestEval(TimedTestCase):
             f.write("[ 7 ] [seven] @\n")
             lib = f.name
         try:
-            out = self.eval(f'"{lib}" :require seven ! .')
+            out = self.eval(f'"{lib}" require seven ! .')
             self.assertIn("7", out)
         finally:
             os.unlink(lib)
 
     def test_exists_false(self):
-        # Without --name/--bus, bus_dir is NULL → :exists is always false
-        out = self.eval('"NoSuchPeer" :exists .')
+        # Without --name/--bus, bus_dir is NULL → sp/exists? is always false
+        out = self.eval('"NoSuchPeer" sp/exists? .')
         self.assertIn("nil", out)
 
     def test_name_str_roundtrip(self):
-        # name>str pulls the name out of a [X] form
-        out = self.eval('[foo] name>str .')
+        # wo/name>str pulls the name out of a [X] form
+        out = self.eval('[foo] wo/name>str .')
         self.assertIn('"foo"', out)
-        # str>name wraps a string into a [X] form
-        out = self.eval('"bar" str>name .')
+        # wo/str>name wraps a string into a [X] form
+        out = self.eval('"bar" wo/str>name .')
         self.assertIn('[bar]', out)
         # round-trip preserves the name
-        out = self.eval('[baz] name>str str>name name>str .')
+        out = self.eval('[baz] wo/name>str wo/str>name wo/name>str .')
         self.assertIn('"baz"', out)
 
     def test_namespaced_word(self):
@@ -380,7 +380,7 @@ class TestEval(TimedTestCase):
                 '"." "github.com/test/proj" deps/override\n')
             (Path(tmp) / "lib.sp").write_text('"<from-override>" .\n')
             (Path(tmp) / "main.sp").write_text(
-                '"github.com/test/proj/lib.sp" :require\n')
+                '"github.com/test/proj/lib.sp" require\n')
             out, err, rc = run_spci(args=[str(Path(tmp) / "main.sp")], timeout=3)
             self.assertEqual(rc, 0, f"spci failed:\n{err}")
             self.assertIn("<from-override>", out)
@@ -457,13 +457,13 @@ class TestStr(TimedTestCase):
     """str/ C primitives and the spacelang library on top."""
 
     def eval(self, code, preamble=""):
-        full = preamble + code + "\n:bye\n"
+        full = preamble + code + "\nbye!\n"
         out, err, rc = run_spci(stdin=full)
         self.assertEqual(rc, 0, f"spci crashed:\n{err}")
         return out
 
     def lib_eval(self, code):
-        return self.eval(code, preamble=f'"{ROOT}/stdlib/str.sp" :require\n')
+        return self.eval(code, preamble=f'"{ROOT}/stdlib/str.sp" require\n')
 
     # ----- C primitives -----
 
@@ -603,10 +603,10 @@ class TestStr(TimedTestCase):
         self.assertIn("2", out)
 
 
-# ── :require preprocessor (spcc inlines required files) ──────────────
+# ── require preprocessor (spcc inlines required files) ──────────────
 
 class TestRequirePreprocess(TimedTestCase):
-    """spcc statically inlines `"path" :require` so compiled binaries
+    """spcc statically inlines `"path" require` so compiled binaries
     are self-contained. Errors out (with file:line) on non-string
     operand or missing file."""
 
@@ -622,10 +622,10 @@ class TestRequirePreprocess(TimedTestCase):
         return p
 
     def test_inlines_library(self):
-        """`:require`d file is embedded — after compile, deleting the .sp
+        """`require`d file is embedded — after compile, deleting the .sp
         sources (and moving the binary elsewhere) must not break the run."""
         lib  = self.write("lib.sp", "[ 7 ] [seven] @\n")
-        main = self.write("main.sp", '"lib.sp" :require seven .\n')
+        main = self.write("main.sp", '"lib.sp" require seven .\n')
         bin_path = str(Path(self.tmp) / "out")
         r = spcc_compile(main, bin_path)
         self.assertEqual(r.returncode, 0, r.stderr)
@@ -650,8 +650,8 @@ class TestRequirePreprocess(TimedTestCase):
         """End-to-end self-containment: write sources, compile, delete the
         ENTIRE source tree, then the binary must still run correctly."""
         self.write("greet.sp", '[ "hi-from-lib" . ] [greet] @\n')
-        self.write("util.sp",  '"greet.sp" :require [ 21 21 + . ] [answer] @\n')
-        main = self.write("main.sp", '"util.sp" :require greet answer\n')
+        self.write("util.sp",  '"greet.sp" require [ 21 21 + . ] [answer] @\n')
+        main = self.write("main.sp", '"util.sp" require greet answer\n')
         bin_path = str(Path(self.tmp) / "out")
 
         r = spcc_compile(main, bin_path)
@@ -676,10 +676,10 @@ class TestRequirePreprocess(TimedTestCase):
             os.makedirs(self.tmp, exist_ok=True)
 
     def test_recursive_require(self):
-        """A required file may itself :require another."""
+        """A required file may itself require another."""
         self.write("a.sp", "[ 1 ] [one] @\n")
-        self.write("b.sp", '"a.sp" :require [ one 1 + ] [two] @\n')
-        main = self.write("main.sp", '"b.sp" :require two .\n')
+        self.write("b.sp", '"a.sp" require [ one 1 + ] [two] @\n')
+        main = self.write("main.sp", '"b.sp" require two .\n')
         bin_path = str(Path(self.tmp) / "out")
         r = spcc_compile(main, bin_path)
         self.assertEqual(r.returncode, 0, r.stderr)
@@ -688,9 +688,9 @@ class TestRequirePreprocess(TimedTestCase):
 
     def test_cycle_safe(self):
         """Mutual requires don't infinite-loop; each file loaded once."""
-        self.write("a.sp", '"b.sp" :require [ 1 ] [a-marker] @\n')
-        self.write("b.sp", '"a.sp" :require [ 2 ] [b-marker] @\n')
-        main = self.write("main.sp", '"a.sp" :require a-marker . b-marker .\n')
+        self.write("a.sp", '"b.sp" require [ 1 ] [a-marker] @\n')
+        self.write("b.sp", '"a.sp" require [ 2 ] [b-marker] @\n')
+        main = self.write("main.sp", '"a.sp" require a-marker . b-marker .\n')
         bin_path = str(Path(self.tmp) / "out")
         r = spcc_compile(main, bin_path)
         self.assertEqual(r.returncode, 0, r.stderr)
@@ -699,29 +699,29 @@ class TestRequirePreprocess(TimedTestCase):
         self.assertIn("2", p.stdout)
 
     def test_error_non_string_operand(self):
-        """:require with a non-string operand is rejected at compile time
+        """require with a non-string operand is rejected at compile time
         with file:line context."""
         main = self.write("main.sp",
             "{ comment }\n"
-            "1 2 + :require\n")        # line 2 has the bad :require
+            "1 2 + require\n")        # line 2 has the bad require
         bin_path = str(Path(self.tmp) / "out")
         r = spcc_compile(main, bin_path)
         self.assertNotEqual(r.returncode, 0)
-        self.assertIn(":require", r.stderr)
+        self.assertIn("require", r.stderr)
         self.assertIn("string literal", r.stderr)
         self.assertIn(f"{main}:2", r.stderr)
 
     def test_error_missing_file(self):
-        """Missing :require target is rejected at compile time with
+        """Missing require target is rejected at compile time with
         the file:line of the offending string literal."""
         main = self.write("main.sp",
             "{ a header }\n"
             "{ another }\n"
-            '"nope-does-not-exist.sp" :require\n')   # line 3
+            '"nope-does-not-exist.sp" require\n')   # line 3
         bin_path = str(Path(self.tmp) / "out")
         r = spcc_compile(main, bin_path)
         self.assertNotEqual(r.returncode, 0)
-        self.assertIn(":require", r.stderr)
+        self.assertIn("require", r.stderr)
         self.assertIn("nope-does-not-exist.sp", r.stderr)
         self.assertIn(f"{main}:3", r.stderr)
 
@@ -746,7 +746,7 @@ class TestSpct(TimedTestCase):
 
     def spci_stdin(self, code, timeout=4):
         """Run spci REPL with stdin code, return combined output."""
-        out, err, rc = run_spci(stdin=code + "\n:bye\n", timeout=timeout)
+        out, err, rc = run_spci(stdin=code + "\nbye!\n", timeout=timeout)
         self.assertEqual(rc, 0, f"spci crashed:\n{err}")
         return out + err
 
@@ -888,7 +888,7 @@ test/summary
 
     def lib_eval(self, code):
         """Run code with test.sp stdlib preloaded."""
-        pre = f'"{ROOT}/stdlib/str.sp" :require "{ROOT}/stdlib/test.sp" :require\n'
+        pre = f'"{ROOT}/stdlib/str.sp" require "{ROOT}/stdlib/test.sp" require\n'
         return self.spci_stdin(pre + code)
 
     def test_reset_zeros_counters(self):
@@ -963,7 +963,7 @@ test/summary
     def test_str_to_str_identity(self):
         """str/->str is identity for string values."""
         out = self.spci_stdin(
-            f'"{ROOT}/stdlib/str.sp" :require\n'
+            f'"{ROOT}/stdlib/str.sp" require\n'
             '"hello" str/->str .\n'
         )
         self.assertIn('"hello"', out)
@@ -980,7 +980,7 @@ TERMS = [
     "dup", "swap", "drop",
     ".",
     "[ 1 ]", "[ 1 2 + ]", "[ dup + ]",
-    ":s",
+    "_s",
 ]
 
 class TestProperty(TimedTestCase):
@@ -1006,7 +1006,7 @@ class TestProperty(TimedTestCase):
                 seq.append(rng.choice(PUSHERS))
                 seq.append(rng.choice(PUSHERS))
                 seq.append(rng.choice(OPS))
-            code = " ".join(seq) + " :bye"
+            code = " ".join(seq) + " bye!"
             out, err, rc = run_spci(stdin=code, timeout=4)
             if rc != 0 and "stack underflow" not in err and "expected number" not in err:
                 failures.append((seq, err))
@@ -1103,7 +1103,7 @@ class TestSpcd(unittest.TestCase):
         seed = FIXDIR / "_seed-bin"
         shutil.rmtree(seed, ignore_errors=True)
         seed.mkdir(parents=True)
-        (seed / "main.sp").write_text('`hello from binrepo` :log\n')
+        (seed / "main.sp").write_text('`hello from binrepo` log\n')
         cls._git_init_and_bare(seed, bare)
         shutil.rmtree(seed, ignore_errors=True)
 
@@ -1296,12 +1296,12 @@ class TestMesh(TimedTestCase):
         # Driver sends `"X" spawn-node !` to spco via $!
         # spco receives EVAL, feeds payload, spawn-node forks an spci.
         out, err, rc = run_spci(
-            stdin='[ "X" spawn-node ! ] "spco" $!  500 :sleep  :bye\n',
+            stdin='[ "X" spawn-node ! ] "spco" $!  500 sleep  bye!\n',
             args=["--name", "DRV", "--bus", BUS],
             timeout=4,
         )
         self.assertEqual(rc, 0, f"spci failed:\n{err}")
-        # Give spawn-node's sh/! + :sleep time to bind X.
+        # Give spawn-node's sh/! + sleep time to bind X.
         for _ in range(20):
             if os.path.exists(f"{BUS}/X.sock"):
                 break
@@ -1315,7 +1315,7 @@ class TestMesh(TimedTestCase):
         """Peer connects directly (socket exists, no spco needed)."""
         self.start_worker("W")
         out, err, rc = run_spci(
-            stdin="42 [W] 2000 $? . :bye\n",
+            stdin="42 [W] 2000 $? . bye!\n",
             args=["--name", "A", "--bus", BUS],
             timeout=4
         )
@@ -1327,7 +1327,7 @@ class TestMesh(TimedTestCase):
         self.start_worker("W")
         self.start_spco()
         out, err, rc = run_spci(
-            stdin="42 [W] 2000 $? . :bye\n",
+            stdin="42 [W] 2000 $? . bye!\n",
             args=["--name", "A", "--bus", BUS],
             timeout=4
         )
@@ -1342,10 +1342,10 @@ class TestMesh(TimedTestCase):
         # first call: spawn Z
         p1 = Path(d) / "first.sp"
         p1.write_text(
-            f'"{ROOT}/stdlib/with-spco.sp" :require\n'
+            f'"{ROOT}/stdlib/with-spco.sp" require\n'
             '"one" [Z] spco/$\n'
         )
-        _, err, rc = run_spci(stdin=":bye\n",
+        _, err, rc = run_spci(stdin="bye!\n",
             args=["--name", "C1", "--bus", BUS, str(p1)], timeout=4)
         self.assertEqual(rc, 0, err)
         time.sleep(0.4)
@@ -1357,13 +1357,13 @@ class TestMesh(TimedTestCase):
         # touch the file to ensure it stays (SIGKILL may have left it anyway)
         Path(f"{BUS}/Z.sock").touch(exist_ok=True)
 
-        # second call: spco/$ should detect Z is dead (:alive false) and respawn
+        # second call: spco/$ should detect Z is dead (sp/alive? false) and respawn
         p2 = Path(d) / "second.sp"
         p2.write_text(
-            f'"{ROOT}/stdlib/with-spco.sp" :require\n'
+            f'"{ROOT}/stdlib/with-spco.sp" require\n'
             '"two" [Z] spco/$\n'
         )
-        _, err, rc = run_spci(stdin=":bye\n",
+        _, err, rc = run_spci(stdin="bye!\n",
             args=["--name", "C2", "--bus", BUS, str(p2)], timeout=4)
         self.assertEqual(rc, 0, err)
         time.sleep(0.5)
@@ -1384,10 +1384,10 @@ class TestMesh(TimedTestCase):
         self.addCleanup(lambda: shutil.rmtree(d, ignore_errors=True))
         prog = Path(d) / "drv.sp"
         prog.write_text(
-            f'"{ROOT}/stdlib/with-spco.sp" :require\n'
+            f'"{ROOT}/stdlib/with-spco.sp" require\n'
             '[ 21 21 + ] [W2] spco/$!\n'
         )
-        _, err, rc = run_spci(stdin=":bye\n",
+        _, err, rc = run_spci(stdin="bye!\n",
             args=["--name", "C", "--bus", BUS, str(prog)], timeout=4)
         self.assertEqual(rc, 0, err)
         time.sleep(0.5)
@@ -1404,11 +1404,11 @@ class TestMesh(TimedTestCase):
         self.addCleanup(lambda: shutil.rmtree(d, ignore_errors=True))
         prog = Path(d) / "drv.sp"
         prog.write_text(
-            f'"{ROOT}/stdlib/with-spco.sp" :require\n'
+            f'"{ROOT}/stdlib/with-spco.sp" require\n'
             '"hi" [Y] via-spco\n'
         )
         out, err, rc = run_spci(
-            stdin=":bye\n",
+            stdin="bye!\n",
             args=["--name", "DRV2", "--bus", BUS, str(prog)],
             timeout=4,
         )
@@ -1430,7 +1430,7 @@ class TestMesh(TimedTestCase):
         """
         self.start_worker("W", "[ 2 * ] [double] @\n")
         out, err, rc = run_spci(
-            stdin="[ 21 double ! ] [W] $!  :bye\n",
+            stdin="[ 21 double ! ] [W] $!  bye!\n",
             args=["--name", "A", "--bus", BUS],
             timeout=4
         )

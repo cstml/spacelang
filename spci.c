@@ -172,7 +172,7 @@ int main(int argc, char **argv) {
 
     /* REPL (no mesh) */
     int is_tty = isatty(STDIN_FILENO);
-    if (is_tty) printf("spci · spacelang in C · :bye to quit\n");
+    if (is_tty) printf("spci · spacelang in C · bye! to quit\n");
     for (;;) {
         if (is_tty) { printf("> "); fflush(stdout); }
         char *chunk = read_chunk(is_tty);

@@ -1,8 +1,8 @@
 { example/tests.sp — demo test suite for the test.sp stdlib.                }
 { Run via:  spct example/tests.sp     or     spci example/tests.sp          }
 
-"../stdlib/str.sp"  :require
-"../stdlib/test.sp" :require
+"github.com/cstml/spacelang/stdlib/str.sp"  require
+"github.com/cstml/spacelang/stdlib/test.sp" require
 
 test/reset
 

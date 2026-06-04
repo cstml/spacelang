@@ -7,7 +7,7 @@
 {                                                                          }
 { Like str/, helpers use named scratch bindings and are NOT reentrant.    }
 
-"github.com/cstml/spacelang/stdlib/str.sp" :require
+"github.com/cstml/spacelang/stdlib/str.sp" require
 
 
 [ { path -- }

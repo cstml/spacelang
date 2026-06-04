@@ -47,7 +47,7 @@ Now `W1` and `W2` are running (check with `ls /tmp/spacelang/`). You can use the
 
 ```
 > "hello" [W1] $
-> [:s] [W1] $!
+> [_s] [W1] $!
 ```
 
 If a worker crashes, send `spawn-node` again — `spco` will notice it's gone and respawn.
@@ -57,7 +57,7 @@ If a worker crashes, send `spawn-node` again — `spco` will notice it's gone an
 Requiring `stdlib/with-spco.sp` gives you `spco/$`, `spco/$!`, and `spco/$?`. These wrap the standard send operators with an automatic spawn-node check — no need to manually call `spawn-node` before sending.
 
 ```
-> "with-spco.sp" :require
+> "with-spco.sp" require
 > "hello" [W1] spco/$        { W1 auto-spawned if missing, then message delivered }
 > [1 2 + .] [W2] spco/$!      { W2 auto-spawned, thunk evaluated }
 ```
@@ -86,4 +86,4 @@ You could type `spawn-node` in the driver REPL directly. `spco` exists because:
 
 ## Relationship to the mesh
 
-`spco` is just another peer on the bus. It has no special privileges. The `spawn-node` word is bound in its own word table — it's not a built-in, just spacelang code that happens to use `sh/!` and `:alive`.
+`spco` is just another peer on the bus. It has no special privileges. The `spawn-node` word is bound in its own word table — it's not a built-in, just spacelang code that happens to use `sh/!` and `sp/alive?`.

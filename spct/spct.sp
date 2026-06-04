@@ -10,8 +10,8 @@
 { Loads test.sp stdlib. Test files must be named *_test.sp and call         }
 { test/reset and test/summary themselves.                                    }
 
-"github.com/cstml/spacelang/stdlib/str.sp"  :require
-"github.com/cstml/spacelang/stdlib/test.sp" :require
+"github.com/cstml/spacelang/stdlib/str.sp"  require
+"github.com/cstml/spacelang/stdlib/test.sp" require
 
 { --- helpers --- }
 
@@ -69,17 +69,17 @@
 
 [
   [ { else: no args, print usage }
-    `Usage: spct [. | dir/ | file.sp ...]` :log
-    `  spct .            find and run *_test.sp files` :log
-    `  spct dir/         find and run *_test.sp under dir` :log
-    `  spct file.sp ...  run specific files` :log
+    `Usage: spct [. | dir/ | file.sp ...]` log
+    `  spct .            find and run *_test.sp files` log
+    `  spct dir/         find and run *_test.sp under dir` log
+    `  spct file.sp ...  run specific files` log
   ]
   [ { then: process each arg }
     0 [spct/_loaded] @
     0 [spct/_i] @
     [
       [ { else: more args }
-        spct/_i :argv [spct/_a] @
+        spct/_i io/argv [spct/_a] @
         [ { else: arg is a file: load directly }
           spct/_a spct/load-file
           spct/_loaded 1 + [spct/_loaded] @
@@ -95,18 +95,18 @@
       ]
       [ { then: all args processed }
         [ ]
-        [ `spct: no *_test.sp files found` :log ]
+        [ `spct: no *_test.sp files found` log ]
         spct/_loaded 0 =
         if
       ]
-      spct/_i :argc >=
+      spct/_i io/argc >=
       if
     ] [spct/arg-loop] @
     spct/arg-loop
   ]
-  :argc 0 >
+  io/argc 0 >
   if
 ] [main] @
 
 main
-:bye
+bye!

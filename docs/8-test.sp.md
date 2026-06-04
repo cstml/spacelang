@@ -6,7 +6,7 @@ prints results to stderr, and reports a summary.
 ## Quick start
 
 ```sp
-"github.com/cstml/spacelang/stdlib/test.sp" :require
+"github.com/cstml/spacelang/stdlib/test.sp" require
 
 test/reset
 
@@ -60,7 +60,7 @@ A typical test file calls:
 
 ## Words
 
-All output goes to stderr via the `:log` built-in.
+All output goes to stderr via the `log` built-in.
 
 ### `test/reset`
 

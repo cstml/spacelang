@@ -16,7 +16,7 @@ slurp eval [i] @
 
 [ nextFibo secondNumber [firstNumber] @ [secondNumber] @ ] [swapWithNextFibos] @
 
-[ [ printFirstFibo :bye ]
+[ [ printFirstFibo bye! ]
  [ printFirstFibo swapWithNextFibos decreaseI areWeThereYet ]
  i
  if ]

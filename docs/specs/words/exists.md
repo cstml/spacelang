@@ -1,14 +1,14 @@
-# `:exists`
+# `sp/exists?`
 
 **Category:** Keywords  
 **Stack:** `name -- bool`  
 **Source:** runtime (C)
 
-Pushes `t` iff `$BUS/<name>.sock` exists and is a socket — a pure filesystem check, no connect. Use `:alive` for a real liveness probe.
+Pushes `t` iff `$BUS/<name>.sock` exists and is a socket — a pure filesystem check, no connect. Use `sp/alive?` for a real liveness probe.
 
 ## Examples
 ```
-> `W1` :exists .
+> `W1` sp/exists? .
 t
 ```
 

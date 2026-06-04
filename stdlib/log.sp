@@ -10,7 +10,7 @@
 { All levels go to stderr so they stay out of the way of words that pipe   }
 { stdout via sh/>.                                                         }
 
-"github.com/cstml/spacelang/stdlib/str.sp" :require
+"github.com/cstml/spacelang/stdlib/str.sp" require
 
 { log/_emit: prefix msg -- ; shell out `echo '<prefix><msg>' >&2`.
   Caller is responsible for keeping single-quotes out of the message. }
@@ -28,6 +28,6 @@
   [log/_d-m] @
   [ `[debug] ` log/_d-m log/_emit ]
   [ ]
-  `SPACELANG_DEBUG` :env str/len 0 =
+  `SPACELANG_DEBUG` io/env str/len 0 =
   if
 ] [log/debug] @

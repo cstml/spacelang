@@ -2,7 +2,7 @@
 {                                              }
 { Run:  ./spci example/strings.sp              }
 
-"../stdlib/str.sp" :require
+"github.com/cstml/spacelang/stdlib/str.sp" require
 
 { ----- C primitives ----- }
 

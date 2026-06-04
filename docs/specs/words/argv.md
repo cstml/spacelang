@@ -1,4 +1,4 @@
-# `:argv`
+# `io/argv`
 
 **Category:** Keywords  
 **Stack:** `i -- s`  
@@ -8,7 +8,7 @@ Pushes the `i`-th user argument as a string, or `""` if out of bounds.
 
 ## Examples
 ```
-> 0 :argv .
+> 0 io/argv .
 "a"
 ```
 

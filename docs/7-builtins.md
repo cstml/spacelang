@@ -65,23 +65,23 @@ Per-word specs: [`docs/specs/words/`](specs/words.md).
 **Example:**
 ```
 > 1 2 dup
-> :s
+> _s
 -- stack (3) --
   [0] 1
   [1] 2
   [2] 2
 > drop
-> :s
+> _s
 -- stack (2) --
   [0] 1
   [1] 2
 > swap
-> :s
+> _s
 -- stack (2) --
   [0] 2
   [1] 1
 > 3 rot
-> :s
+> _s
 -- stack (3) --
   [0] 1
   [1] 3
@@ -110,7 +110,7 @@ Without `!`, the selected thunk is left on the stack as data:
 
 ```
 > [1 2 +] [3 4 +] true if
-> :s
+> _s
 -- stack (1) --
   [0] [3 4 +]
 ```
@@ -144,7 +144,7 @@ To push a raw thunk as data instead, double-wrap it:
 
 ```
 > [ [ 1 2 + ] ] [data-thunk] @
-> data-thunk :s
+> data-thunk _s
 -- stack (1) --
   [0] [1 2 +]
 ```
@@ -228,7 +228,7 @@ Feeds a string into the interpreter as source code.
 
 ```
 > "1 2 +" eval
-> :s
+> _s
 -- stack (1) --
   [0] 3
 ```
@@ -276,7 +276,7 @@ thunk, the receiver evaluates it.
 
 ```
 > [ 1 2 + . ] [W2] $!        { W2 prints "3" on its own terminal }
-> [:s] [W1] $!                { asks W1 to print its stack }
+> [_s] [W1] $!                { asks W1 to print its stack }
 ```
 
 ### `$?` — sync send with timeout
@@ -293,7 +293,7 @@ t                             { W1 acked within 2 seconds }
 0                             { no such peer, connect failed }
 ```
 
-### spco-aware variants (requires `"with-spco.sp" :require`)
+### spco-aware variants (requires `"with-spco.sp" require`)
 
 These ask the `spco` discovery broker to ensure the peer is up before sending:
 
@@ -304,7 +304,7 @@ These ask the `spco` discovery broker to ensure the peer is up before sending:
 | `spco/$?` | `$?` |
 
 ```
-> "with-spco.sp" :require
+> "with-spco.sp" require
 > "hello" [B] spco/$
 ```
 
@@ -451,7 +451,7 @@ t
 
 ---
 
-## String Library (after `"str/str.sp" :require`)
+## String Library (after `"str/str.sp" require`)
 
 ### `str/empty?`
 
@@ -573,13 +573,13 @@ Drops a single trailing newline. Safe on empty strings.
 
 ## Keywords
 
-### `:s` — print stack
+### `_s` — print stack
 
 Prints the current stack contents (without modifying it).
 
 ```
 > 1 2 "hi" [3 4 +]
-> :s
+> _s
 -- stack (4) --
   [0] 1
   [1] 2
@@ -587,79 +587,79 @@ Prints the current stack contents (without modifying it).
   [3] [3 4 +]
 ```
 
-### `:bye` — exit
+### `bye!` — exit
 
 Exits the interpreter immediately with status 0.
 
 ```
-> :bye
+> bye!
 ```
 
-### `:sleep` — sleep
+### `sleep` — sleep
 
-`n :sleep`
+`n sleep`
 
 Sleeps for `n` milliseconds.
 
 ```
-> "about to sleep..." . 1000 :sleep "woke up" .
+> "about to sleep..." . 1000 sleep "woke up" .
 "about to sleep..."
 "woke up"
 ```
 
-### `:require` — load file
+### `require` — load file
 
-`"path" :require`
+`"path" require`
 
 Loads and evaluates a `.sp` source file. Resolves relative paths against the
 directory of the currently-loading file, not CWD. Cycle-safe (each file is
 inlined at most once).
 
 ```
-> "stdlib/str.sp" :require
+> "stdlib/str.sp" require
 > "hello" str/empty? .
 0
 ```
 
-### `:log` — log to stderr
+### `log` — log to stderr
 
-`"msg" :log`
+`"msg" log`
 
 Writes the string to stderr (with a newline). Useful for debug output that
 doesn't contaminate stack values.
 
 ```
-> "processing..." :log
+> "processing..." log
 processing...                    { on stderr }
 ```
 
-### `:bus` — current bus directory
+### `sp/bus` — current bus directory
 
-`:bus`
+`sp/bus`
 
 Pushes the current bus directory as a string (or `""` if not in mesh mode).
 
 ```
-> :bus .
+> sp/bus .
 "/tmp/spacelang"
 ```
 
-### `:env` — environment variable
+### `io/env` — environment variable
 
-`"NAME" :env`
+`"NAME" io/env`
 
 Pushes the value of the environment variable, or `""` if unset.
 
 ```
-> "HOME" :env .
+> "HOME" io/env .
 "/home/cstml"
-> "NONEXISTENT" :env .
+> "NONEXISTENT" io/env .
 ""
 ```
 
-### `:argc` — user argument count
+### `io/argc` — user argument count
 
-`:argc`
+`io/argc`
 
 Pushes the number of arguments passed after `--` on the command line.
 
@@ -667,69 +667,69 @@ Pushes the number of arguments passed after `--` on the command line.
 $ ./spci --name N --bus /tmp/s -- myscript.sp data.txt
 ```
 ```
-> :argc .
+> io/argc .
 2
 ```
 
-### `:argv` — nth user argument
+### `io/argv` — nth user argument
 
-`n :argv`
+`n io/argv`
 
 Pushes the nth argument passed after `--`, or `""` if out of bounds.
 
 ```
-> 0 :argv .
+> 0 io/argv .
 "myscript.sp"
-> 1 :argv .
+> 1 io/argv .
 "data.txt"
-> 5 :argv .
+> 5 io/argv .
 ""
 ```
 
-### `:exists` — socket existence check
+### `sp/exists?` — socket existence check
 
-`"name" :exists`
+`"name" sp/exists?`
 
 Pushes `t` if `$BUS/<name>.sock` exists and is a socket (filesystem check only).
 
 ```
-> "W1" :exists .
+> "W1" sp/exists? .
 t
 ```
 
-### `:alive` — real connect test
+### `sp/alive?` — real connect test
 
-`[name] :alive`
+`[name] sp/alive?`
 
 Pushes `t` if a peer is actually listening on `$BUS/<name>.sock` (opens a real
-connection, then closes it). More reliable than `:exists`.
+connection, then closes it). More reliable than `sp/exists?`.
 
 ```
-> [worker] :alive .
+> [worker] sp/alive? .
 t
 ```
 
-### `name>str` — name to string
+### `wo/name>str` — name to string
 
-`[name] name>str`
+`[name] wo/name>str`
 
 Extracts the name from a binding form and pushes it as a string.
 
 ```
-> [my-peer] name>str .
+> [my-peer] wo/name>str .
 "my-peer"
-> "my-peer" name>str .
+> "my-peer" wo/name>str .
 "my-peer"
 ```
 
-### `str>name` — string to name
+### `wo/str>name` — string to name
 
-`"s" str>name`
+`"s" wo/str>name`
 
 Converts a string into a binding-form thunk `[name]`.
 
 ```
-> "worker1" str>name .
+> "worker1" wo/str>name .
 [worker1]
 ```
 
@@ -764,7 +764,7 @@ A quotation (thunk) captures a sequence of terms as a first-class value.
 It does not execute when parsed — it sits on the stack as data.
 
 ```
-> [ 1 2 + ] :s
+> [ 1 2 + ] _s
 -- stack (1) --
   [0] [1 2 +]
 ```
@@ -781,7 +781,7 @@ To push a thunk as data through a binding, double-wrap it:
 
 ```
 > [ [ 1 2 + ] ] [my-data] @
-> my-data :s
+> my-data _s
 -- stack (1) --
   [0] [1 2 +]
 ```
@@ -819,20 +819,20 @@ I/O             .  ,  slurp  eval
 Mesh            $  $!  $?
 Shell           sh/!  sh/>  sh/|  sh/|>
 Strings (C)     str/cat  str/len  str/sub  str/ord  str/chr  str/eq
-Keywords        :s  :bye  :sleep  :require  :exists  :alive  :bus  :log
-                :env  :argc  :argv  name>str  str>name
+Keywords        _s  bye!  sleep  require  sp/exists?  sp/alive?  sp/bus  log
+                io/env  io/argc  io/argv  wo/name>str  wo/str>name
 Literals        true  false  nil
 Syntax          [ ... ]  { ... }  "..."  '...'  `...`
 ```
 
-### After `"stdlib/str.sp" :require`
+### After `"stdlib/str.sp" require`
 
 ```
 str/empty?  str/head  str/tail  str/reverse  str/repeat
 str/starts-with?  str/ends-with?  str/contains?  str/index  str/strip-nl
 ```
 
-### After `"stdlib/with-spco.sp" :require`
+### After `"stdlib/with-spco.sp" require`
 
 ```
 spco/$  spco/$!  spco/$?

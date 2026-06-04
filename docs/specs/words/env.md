@@ -1,4 +1,4 @@
-# `:env`
+# `io/env`
 
 **Category:** Keywords  
 **Stack:** `name -- value`  
@@ -8,7 +8,7 @@ Pushes the value of environment variable `name`, or `""` if unset.
 
 ## Examples
 ```
-> `HOME` :env .
+> `HOME` io/env .
 "/home/cstml"
 ```
 

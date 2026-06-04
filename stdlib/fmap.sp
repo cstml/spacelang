@@ -12,7 +12,7 @@
 {                                                                          }
 { Helpers use named scratch bindings; NOT reentrant.                       }
 
-"github.com/cstml/spacelang/stdlib/str.sp" :require
+"github.com/cstml/spacelang/stdlib/str.sp" require
 
 [ { path -- }
   `> ` swap str/cat sh/! drop

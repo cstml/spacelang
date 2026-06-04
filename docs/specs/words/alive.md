@@ -1,4 +1,4 @@
-# `:alive`
+# `sp/alive?`
 
 **Category:** Keywords  
 **Stack:** `[name] -- bool`  
@@ -8,6 +8,6 @@ Attempts a real connect to `$BUS/<name>.sock` and immediately closes it. Pushes 
 
 ## Examples
 ```
-> [worker] :alive .
+> [worker] sp/alive? .
 t
 ```

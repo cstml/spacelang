@@ -1,4 +1,4 @@
-# `:bus`
+# `sp/bus`
 
 **Category:** Keywords  
 **Stack:** ` -- dir`  
@@ -8,6 +8,6 @@ Pushes the current bus directory as a string (`""` if not in mesh mode).
 
 ## Examples
 ```
-> :bus .
+> sp/bus .
 "/tmp/spacelang"
 ```

@@ -1,8 +1,8 @@
 { cmp_test.sp — exercises the total ordering of < > <= >= and =.
   Rank order: number < bool/word < thunk < string. }
 
-"../stdlib/str.sp"  :require
-"../stdlib/test.sp" :require
+"github.com/cstml/spacelang/stdlib/str.sp"  require
+"github.com/cstml/spacelang/stdlib/test.sp" require
 
 test/reset
 

@@ -1,4 +1,4 @@
-# `:bye`
+# `bye!`
 
 **Category:** Keywords  
 **Stack:** ` -- `  
@@ -8,5 +8,5 @@ Exits the interpreter immediately with status 0.
 
 ## Examples
 ```
-> :bye
+> bye!
 ```

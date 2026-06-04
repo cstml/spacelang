@@ -23,7 +23,7 @@ spci [flags] [file.sp ...]
 | `--bus DIR` | Unix socket directory for the mesh |
 | `--serve` | Keep mesh alive after files processed (no REPL) |
 | `--version`, `-V` | Print version and exit |
-| `--` | Everything after becomes `:argv` for the program |
+| `--` | Everything after becomes `io/argv` for the program |
 
 ### Modes at a glance
 

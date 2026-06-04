@@ -7,11 +7,11 @@
  *   dup swap drop if
  *   @ (bind)   ! (eval)   . (print)   , (format)   ~ (describe)
  *   slurp (read line from stdin → string)   eval (pop string → feed)
- *   sh/! (shell out, exit status)   sh/> (capture stdout)   :sleep (ms)   :exists (peer?)
- *   :bus (push current bus dir)   :require (load + feed file)   rot
- *   :log (pop string → stderr line)   :alive (real connect test)
- *   name>str ([X] → "X")   str>name ("X" → [X])
- *   :s (print stack)   :bye (exit)   { comments }
+ *   sh/! (shell out, exit status)   sh/> (capture stdout)   sleep (ms)   sp/exists? (peer?)
+ *   sp/bus (push current bus dir)   require (load + feed file)   rot
+ *   log (pop string → stderr line)   sp/alive? (real connect test)
+ *   wo/name>str ([X] → "X")   wo/str>name ("X" → [X])
+ *   _s (print stack)   bye! (exit)   { comments }
  *
  * Inter-machine (with --name X --bus DIR):
  *   $  (send PUSH, fire-and-forget)
@@ -493,7 +493,7 @@ int mesh_listen(void) {
     listen_fd = fd;
     /* Install cleanup so the socket file goes away on graceful exit
      * or on common kill signals. SIGKILL/segfaults still leave a stale
-     * file — that's why callers use :alive (real connect test). */
+     * file — that's why callers use sp/alive? (real connect test). */
     atexit(mesh_cleanup_socket);
     signal(SIGINT,  mesh_signal_exit);
     signal(SIGTERM, mesh_signal_exit);
@@ -747,8 +747,8 @@ static const char *binding_name(Value *v) {
 
 static void eval_word(const char *w) {
     /* keywords */
-    if (!strcmp(w, ":s"))   { print_stack(); return; }
-    if (!strcmp(w, ":bye")) { exit(0); }
+    if (!strcmp(w, "_s"))   { print_stack(); return; }
+    if (!strcmp(w, "bye!")) { exit(0); }
 
     /* arithmetic / comparison */
     if (!strcmp(w,"+")) { bin_num(add); return; }
@@ -1053,8 +1053,8 @@ static void eval_word(const char *w) {
         return;
     }
 
-    /* :sleep — pop a number (milliseconds), sleep that long */
-    if (!strcmp(w, ":sleep")) {
+    /* sleep — pop a number (milliseconds), sleep that long */
+    if (!strcmp(w, "sleep")) {
         Value *t = pop();
         if (t && t->type == V_NUM) {
             long ms = t->as.num;
@@ -1062,17 +1062,17 @@ static void eval_word(const char *w) {
                 struct timespec ts = { ms / 1000, (ms % 1000) * 1000000L };
                 nanosleep(&ts, NULL);
             }
-        } else fprintf(stderr, ":sleep: expected number\n");
+        } else fprintf(stderr, "sleep: expected number\n");
         v_unref(t);
         return;
     }
 
-    /* :require — pop a path string, load and evaluate that file.
+    /* require — pop a path string, load and evaluate that file.
      * Falls back to spc_source_dir for non-absolute paths so a script
      * can require sibling files (e.g. "dep.sp") without depending on CWD.
      * Updates spc_source_dir to the loaded file's dir during the inner
      * feed so nested requires resolve relative to *their* file. */
-    if (!strcmp(w, ":require")) {
+    if (!strcmp(w, "require")) {
         Value *t = pop();
         if (t && t->type == V_STR) {
             /* Lazy-load deps.sp overrides on first require. */
@@ -1116,61 +1116,61 @@ static void eval_word(const char *w) {
                 free(dir_dup);
                 free(buf);
             } else {
-                fprintf(stderr, ":require: cannot open '%s'\n", t->as.str);
+                fprintf(stderr, "require: cannot open '%s'\n", t->as.str);
             }
-        } else fprintf(stderr, ":require: expected string\n");
+        } else fprintf(stderr, "require: expected string\n");
         v_unref(t);
         return;
     }
 
-    /* name>str — pop a binder form ([X] or "X"), push the name as a string */
-    if (!strcmp(w, "name>str")) {
+    /* wo/name>str — pop a binder form ([X] or "X"), push the name as a string */
+    if (!strcmp(w, "wo/name>str")) {
         Value *v = pop();
         const char *n = binding_name(v);
         if (n) push(v_str(n));
-        else { fprintf(stderr, "name>str: expected [name] or string\n"); push(v_str("")); }
+        else { fprintf(stderr, "wo/name>str: expected [name] or string\n"); push(v_str("")); }
         v_unref(v);
         return;
     }
 
-    /* str>name — pop a string, push a [name] thunk-of-word */
-    if (!strcmp(w, "str>name")) {
+    /* wo/str>name — pop a string, push a [name] thunk-of-word */
+    if (!strcmp(w, "wo/str>name")) {
         Value *v = pop();
         if (v && v->type == V_STR) {
             Value *t = v_thunk();
             thunk_push(t, v_word(v->as.str));
             push(t);
         } else {
-            fprintf(stderr, "str>name: expected string\n");
+            fprintf(stderr, "wo/str>name: expected string\n");
             push(v_thunk());
         }
         v_unref(v);
         return;
     }
 
-    /* :log — pop a string, write it raw to stderr with newline */
-    if (!strcmp(w, ":log")) {
+    /* log — pop a string, write it raw to stderr with newline */
+    if (!strcmp(w, "log")) {
         Value *t = pop();
         if (t && t->type == V_STR) { fputs(t->as.str, stderr); fputc('\n', stderr); }
-        else fprintf(stderr, ":log: expected string\n");
+        else fprintf(stderr, "log: expected string\n");
         v_unref(t);
         return;
     }
 
-    /* :bus — push the current bus_dir as a string (or "" if unset) */
-    if (!strcmp(w, ":bus")) {
+    /* sp/bus — push the current bus_dir as a string (or "" if unset) */
+    if (!strcmp(w, "sp/bus")) {
         push(v_str(bus_dir ? bus_dir : ""));
         return;
     }
 
-    /* :argc — push the number of user args (set by the driver) */
-    if (!strcmp(w, ":argc")) {
+    /* io/argc — push the number of user args (set by the driver) */
+    if (!strcmp(w, "io/argc")) {
         push(v_num(user_argc));
         return;
     }
 
-    /* :argv — pop an index n, push the nth user arg as string (or "" if oob) */
-    if (!strcmp(w, ":argv")) {
+    /* io/argv — pop an index n, push the nth user arg as string (or "" if oob) */
+    if (!strcmp(w, "io/argv")) {
         Value *v = pop();
         long n = v ? v->as.num : -1;
         v_unref(v);
@@ -1179,8 +1179,8 @@ static void eval_word(const char *w) {
         return;
     }
 
-    /* :env — pop a string name, push getenv(name) or "" if unset */
-    if (!strcmp(w, ":env")) {
+    /* io/env — pop a string name, push getenv(name) or "" if unset */
+    if (!strcmp(w, "io/env")) {
         Value *v = pop();
         const char *val = (v && v->type == V_STR) ? getenv(v->as.str) : NULL;
         push(v_str(val ? val : ""));
@@ -1188,9 +1188,9 @@ static void eval_word(const char *w) {
         return;
     }
 
-    /* :alive — pop a name (string or [name]), push t iff something is listening
+    /* sp/alive? — pop a name (string or [name]), push t iff something is listening
      * on $BUS/name.sock right now (real connect test, not just fs check). */
-    if (!strcmp(w, ":alive")) {
+    if (!strcmp(w, "sp/alive?")) {
         Value *v = pop();
         const char *name = binding_name(v);
         int alive = 0;
@@ -1211,8 +1211,8 @@ static void eval_word(const char *w) {
         return;
     }
 
-    /* :exists — pop a name (string or [name]), push t if $BUS/name.sock exists */
-    if (!strcmp(w, ":exists")) {
+    /* sp/exists? — pop a name (string or [name]), push t if $BUS/name.sock exists */
+    if (!strcmp(w, "sp/exists?")) {
         Value *v = pop();
         const char *name = binding_name(v);
         int present = 0;
@@ -1307,7 +1307,7 @@ static void eval_word(const char *w) {
         }
     }
 
-    /* :s :bye */
+    /* _s bye! */
     if (!strcmp(w,":")) {
         /* should never get here as bare token — keywords are parsed as : then word.
          * Drop silently. */
@@ -1351,7 +1351,7 @@ static void eval(Value *t) {
     }
 }
 
-/* a parsed top-level word like ":s" arrives as two tokens (":" then "s")
+/* a parsed top-level word like "_s" arrives as two tokens (":" then "s")
  * because of our single-char op rule. Fuse them at the source feeder. */
 void feed(const char *src) {
     Lex L = { src, 0, strlen(src) };

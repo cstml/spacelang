@@ -4,7 +4,7 @@
 **Stack:** `value [name] -- `  
 **Source:** stdlib/with-spco.sp
 
-Same as `$`, but first asks the `spco` discovery broker to ensure the peer is up (spawning it if necessary). Requires `"stdlib/with-spco.sp" :require`.
+Same as `$`, but first asks the `spco` discovery broker to ensure the peer is up (spawning it if necessary). Requires `"stdlib/with-spco.sp" require`.
 
 ## Examples
 ```
