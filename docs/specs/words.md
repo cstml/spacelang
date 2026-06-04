@@ -43,8 +43,8 @@ One file per built-in word. Each spec covers stack effect, semantics, an example
 ## I/O
 
 - [`.`](words/print.md)
-- [`,`](words/comma.md)
-- [`slurp`](words/slurp.md)
+- [`;`](words/semicolon.md)
+- [`io/slurp`](words/slurp.md)
 - [`eval`](words/eval.md)
 
 ## Mesh
@@ -76,9 +76,9 @@ One file per built-in word. Each spec covers stack effect, semantics, an example
 
 - [`_s`](words/stack.md)
 - [`bye!`](words/bye.md)
-- [`sleep`](words/sleep.md)
+- [`io/sleep`](words/sleep.md)
 - [`require`](words/require.md)
-- [`log`](words/log.md)
+- [`io/log`](words/log.md)
 
 ## Process (io/)
 

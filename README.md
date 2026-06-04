@@ -103,12 +103,12 @@ right away. To push a thunk as data, bind it double-wrapped:
 **I/O:**
 ```
 .     { x → print x with newline }
-,     { x → format and print (same as . for now) }
-slurp { → read a line from stdin, push as string (newline stripped) }
+;     { x → print without trailing newline (companion of .) }
+io/slurp { → read a line from stdin, push as string (newline stripped) }
 eval  { string → feed it to the interpreter }
 ```
 
-`slurp eval` is the dynamic-load idiom — read a line of source and run it.
+`io/slurp eval` is the dynamic-load idiom — read a line of source and run it.
 
 **Mesh (only meaningful with `--name`/`SPACELANG_NAME` set):**
 ```
@@ -147,11 +147,11 @@ str/contains?  str/index
 ```
 _s        { print the stack }
 bye!      { exit 0 }
-sleep    { n → sleep n milliseconds }
+io/sleep    { n → io/sleep n milliseconds }
 require  { "path" → load and feed file at path }
 sp/exists?   { "name" → is there a mesh peer with that name? }
 sp/bus      { → push current bus dir }
-log      { x → print to stderr }
+io/log      { x → print to stderr }
 ```
 
 ### Idioms
@@ -163,8 +163,8 @@ log      { x → print to stderr }
 [ 1 + ] [inc] @
 0 inc inc inc .            { → 3 }
 
-slurp eval                 { one REPL step }
-[ slurp eval ] [step] @
+io/slurp eval                 { one REPL step }
+[ io/slurp eval ] [step] @
 step step step             { read & execute 3 lines from stdin }
 ```
 

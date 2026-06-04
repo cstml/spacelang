@@ -60,27 +60,27 @@
 
 
   " ,] [newPage] @
-[slurp newPage !] [waitForCharacter] @
+[io/slurp newPage !] [waitForCharacter] @
 
 [_s] [results] @
 
 [ . waitForCharacter ! ] [printThenWait] @
-"Hello and welcome to TechDive presentation of spacelang" ,
+"Hello and welcome to TechDive presentation of spacelang" ;
 waitForCharacter !
 
-"What is spacelang you ask?" ,
+"What is spacelang you ask?" ;
 waitForCharacter !
 
-"It is a stack based programming language (akin to Forth), that: " , waitForCharacter !
-"Pause for dramatic effect." , waitForCharacter !
-"- is simpler (?)," , waitForCharacter !
-"- proposes a novel async model (as far as stack languages go)," , waitForCharacter !
-"- leverages lazy evaluation," , waitForCharacter !
-"- has some interesting features," , waitForCharacter !
-"- meta-programming is built-in and part of the normal functioning of the language." , waitForCharacter !
+"It is a stack based programming language (akin to Forth), that: " ; waitForCharacter !
+"Pause for dramatic effect." ; waitForCharacter !
+"- is simpler (?)," ; waitForCharacter !
+"- proposes a novel async model (as far as stack languages go)," ; waitForCharacter !
+"- leverages lazy evaluation," ; waitForCharacter !
+"- has some interesting features," ; waitForCharacter !
+"- meta-programming is built-in and part of the normal functioning of the language." ; waitForCharacter !
 
 "We have a stack to which we can push Terms:
-We simply push them by writing them down:" ,
+We simply push them by writing them down:" ;
 
 "> 1 2 " . waitForCharacter !
 
@@ -94,8 +94,8 @@ even with the addition of effects." .
 
 waitForCharacter !
 
-"Our terms can be numbers, strings, booleans, words, or thunks." ,
-"> 1 'strings' true + [thunk]" ,
+"Our terms can be numbers, strings, booleans, words, or thunks." ;
+"> 1 'strings' true + [thunk]" ;
 waitForCharacter !
 
 "Words, and terms in spacelang are from a type perspective arrows, which means
@@ -111,7 +111,7 @@ that they compose. Let's use the following notation:
 
   This 'arrow' property of terms means that any term is a function, and it also
   gives us the concatenative property of the language. In essence a sequence of
-  two terms is a composition." , waitForCharacter !
+  two terms is a composition." ; waitForCharacter !
 
 "As the TechDive is a bit short, to cover 'Principia Mathematica', we'll accept
 that numbers are primitives that evaluate to themselves. As seen before. So are strings.
@@ -119,7 +119,7 @@ that numbers are primitives that evaluate to themselves. As seen before. So are 
 From a type perspective we say
 'a' : ( -- String)
 1   : ( -- Number)
-  " ,
+  " ;
 waitForCharacter !
 
 "The first notable exception are words. Words evaluate to their binding (whatever
@@ -151,7 +151,7 @@ waitForCharacter !
 "We can bind terms to words with the word `@`, together with thunks we can now
 define our own funky words.
 
-  > [1 +] [addOne] " ,
+  > [1 +] [addOne] " ;
 waitForCharacter !
 
 "Word bindings have a notion of scope, therefore if we do the following:
@@ -164,17 +164,17 @@ defined by the parens.
 As the parens themselves are terms - we can use scope local to our thunks as so
   >  [ ([x] @) ]
   A term which would pop x and discard it essentially.
-  " , waitForCharacter !
+  " ; waitForCharacter !
 
 "Last thing to mention is that spacelang is more or less a language to
   orchestrate a machine. Imagine many such machines each with their own address.
   Here is where $ operator comes into play.
   This is the async model of space.
-  " , waitForCharacter !
+  " ; waitForCharacter !
 
-"Enough talking, let's find bugs!" , waitForCharacter !
+"Enough talking, let's find bugs!" ; waitForCharacter !
 
-"The End." , waitForCharacter !
-"*Pause for aplause.*" , waitForCharacter !
+"The End." ; waitForCharacter !
+"*Pause for aplause.*" ; waitForCharacter !
 
-"Any questions?" ,
+"Any questions?" ;

@@ -1,4 +1,4 @@
-{ lib/log.sp — logging library, built on /bin/echo via sh/!.            }
+{ lib/log.sp — logging library, built on /bin/echo via sh/!.              }
 {                                                                          }
 { Words:                                                                   }
 {   log/info   msg --      "[info] msg" to stderr                          }

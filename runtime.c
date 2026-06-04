@@ -6,10 +6,10 @@
  *   + - * / < > <= >= =
  *   dup swap drop if
  *   @ (bind)   ! (eval)   . (print)   , (format)   ~ (describe)
- *   slurp (read line from stdin → string)   eval (pop string → feed)
- *   sh/! (shell out, exit status)   sh/> (capture stdout)   sleep (ms)   sp/exists? (peer?)
+ *   io/slurp (read line from stdin → string)   eval (pop string → feed)
+ *   sh/! (shell out, exit status)   sh/> (capture stdout)   io/sleep (ms)   sp/exists? (peer?)
  *   sp/bus (push current bus dir)   require (load + feed file)   rot
- *   log (pop string → stderr line)   sp/alive? (real connect test)
+ *   io/log (pop string → stderr line)   sp/alive? (real connect test)
  *   wo/name>str ([X] → "X")   wo/str>name ("X" → [X])
  *   _s (print stack)   bye! (exit)   { comments }
  *
@@ -596,7 +596,7 @@ static Value *parse_term(Lex *L) {
     }
 
     /* single-char ops / punctuation become words too */
-    if (strchr("+-*/<>=@!.,~$:]", c)) {
+    if (strchr("+-*/<>=@!.;~$:]", c)) {
         char buf[2] = { c, 0 };
         L->i++;
         return v_word(buf);
@@ -808,8 +808,8 @@ static void eval_word(const char *w) {
         return;
     }
 
-    /* slurp: read one line from stdin (sans trailing newline), push as string */
-    if (!strcmp(w, "slurp")) {
+    /* io/slurp: read one line from stdin (sans trailing newline), push as string */
+    if (!strcmp(w, "io/slurp")) {
         char line[4096];
         if (fgets(line, sizeof line, stdin)) {
             size_t n = strlen(line);
@@ -1053,8 +1053,8 @@ static void eval_word(const char *w) {
         return;
     }
 
-    /* sleep — pop a number (milliseconds), sleep that long */
-    if (!strcmp(w, "sleep")) {
+    /* io/sleep — pop a number (milliseconds), io/sleep that long */
+    if (!strcmp(w, "io/sleep")) {
         Value *t = pop();
         if (t && t->type == V_NUM) {
             long ms = t->as.num;
@@ -1062,7 +1062,7 @@ static void eval_word(const char *w) {
                 struct timespec ts = { ms / 1000, (ms % 1000) * 1000000L };
                 nanosleep(&ts, NULL);
             }
-        } else fprintf(stderr, "sleep: expected number\n");
+        } else fprintf(stderr, "io/sleep: expected number\n");
         v_unref(t);
         return;
     }
@@ -1148,11 +1148,11 @@ static void eval_word(const char *w) {
         return;
     }
 
-    /* log — pop a string, write it raw to stderr with newline */
-    if (!strcmp(w, "log")) {
+    /* io/log — pop a string, write it raw to stderr with newline */
+    if (!strcmp(w, "io/log")) {
         Value *t = pop();
         if (t && t->type == V_STR) { fputs(t->as.str, stderr); fputc('\n', stderr); }
-        else fprintf(stderr, "log: expected string\n");
+        else fprintf(stderr, "io/log: expected string\n");
         v_unref(t);
         return;
     }
@@ -1231,9 +1231,9 @@ static void eval_word(const char *w) {
     if (!strcmp(w,".")) {
         Value *t = pop(); pretty(t); printf("\n"); v_unref(t); return;
     }
-    /* , format — same as print for our value repr */
-    if (!strcmp(w,",")) {
-        Value *t = pop(); pretty(t); printf("\n"); v_unref(t); return;
+    /* ; print without trailing newline */
+    if (!strcmp(w,";")) {
+        Value *t = pop(); pretty(t); v_unref(t); return;
     }
     /* ~ describe */
     if (!strcmp(w,"~")) {

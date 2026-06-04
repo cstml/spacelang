@@ -196,26 +196,26 @@ Print the value with a trailing newline.
 [1 2 +]
 ```
 
-### `,` — format print
+### `;` — print without newline
 
-`x ,`
+`x ;`
 
-Same as `.` for all current value types.
+Pretty-prints the top of stack without the trailing `\n` that `.` adds. Use it
+to compose pieces of a single output line.
 
 ```
-> "hi" , "there" ,
-"hi"
-"there"
+> "hi" ; " " ; "there" .
+"hi" "there"
 ```
 
-### `slurp` — read line
+### `io/slurp` — read line
 
-`slurp`
+`io/slurp`
 
 Reads one line from stdin (newline stripped), pushes it as a string.
 
 ```
-> slurp .
+> io/slurp .
 hello world          { typed by user }
 "hello world"
 ```
@@ -236,7 +236,7 @@ Feeds a string into the interpreter as source code.
 The classic REPL-step idiom:
 
 ```
-> slurp eval
+> io/slurp eval
 1 2 + .             { typed by user }
 3
 ```
@@ -244,7 +244,7 @@ The classic REPL-step idiom:
 Make it a reusable word:
 
 ```
-> [ slurp eval ] [step] @
+> [ io/slurp eval ] [step] @
 > step
 40 2 + .             { typed }
 42
@@ -595,15 +595,15 @@ Exits the interpreter immediately with status 0.
 > bye!
 ```
 
-### `sleep` — sleep
+### `io/sleep` — io/sleep
 
-`n sleep`
+`n io/sleep`
 
 Sleeps for `n` milliseconds.
 
 ```
-> "about to sleep..." . 1000 sleep "woke up" .
-"about to sleep..."
+> "about to io/sleep..." . 1000 io/sleep "woke up" .
+"about to io/sleep..."
 "woke up"
 ```
 
@@ -621,15 +621,15 @@ inlined at most once).
 0
 ```
 
-### `log` — log to stderr
+### `io/log` — io/log to stderr
 
-`"msg" log`
+`"msg" io/log`
 
 Writes the string to stderr (with a newline). Useful for debug output that
 doesn't contaminate stack values.
 
 ```
-> "processing..." log
+> "processing..." io/log
 processing...                    { on stderr }
 ```
 
@@ -815,11 +815,11 @@ Arithmetic      +  -  *  /  <  >  <=  >=  =
 Stack           dup  swap  drop  rot
 Control         if
 Binding         @  !  ~
-I/O             .  ,  slurp  eval
+I/O             .  ,  io/slurp  eval
 Mesh            $  $!  $?
 Shell           sh/!  sh/>  sh/|  sh/|>
 Strings (C)     str/cat  str/len  str/sub  str/ord  str/chr  str/eq
-Keywords        _s  bye!  sleep  require  sp/exists?  sp/alive?  sp/bus  log
+Keywords        _s  bye!  io/sleep  require  sp/exists?  sp/alive?  sp/bus  io/log
                 io/env  io/argc  io/argv  wo/name>str  wo/str>name
 Literals        true  false  nil
 Syntax          [ ... ]  { ... }  "..."  '...'  `...`

@@ -4,7 +4,7 @@
 **Stack:** `s -- ...`  
 **Source:** runtime (C)
 
-Pops a string and evaluates it as Spaceforth source. The classic step idiom is `slurp eval`.
+Pops a string and evaluates it as Spaceforth source. The classic step idiom is `io/slurp eval`.
 
 ## Examples
 ```

@@ -1,9 +1,9 @@
 { A simple example of a program }
 
 "Hello, this prints the first n fibonacci numbers
-How many numbers would you like to print?" ,
+How many numbers would you like to print?" ;
 
-slurp eval [i] @
+io/slurp eval [i] @
 
 [ i 1 - [i] @ ] [ decreaseI ] @
 

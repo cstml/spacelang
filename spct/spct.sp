@@ -69,10 +69,10 @@
 
 [
   [ { else: no args, print usage }
-    `Usage: spct [. | dir/ | file.sp ...]` log
-    `  spct .            find and run *_test.sp files` log
-    `  spct dir/         find and run *_test.sp under dir` log
-    `  spct file.sp ...  run specific files` log
+    `Usage: spct [. | dir/ | file.sp ...]` io/log
+    `  spct .            find and run *_test.sp files` io/log
+    `  spct dir/         find and run *_test.sp under dir` io/log
+    `  spct file.sp ...  run specific files` io/log
   ]
   [ { then: process each arg }
     0 [spct/_loaded] @
@@ -95,7 +95,7 @@
       ]
       [ { then: all args processed }
         [ ]
-        [ `spct: no *_test.sp files found` log ]
+        [ `spct: no *_test.sp files found` io/log ]
         spct/_loaded 0 =
         if
       ]

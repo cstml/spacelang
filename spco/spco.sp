@@ -11,12 +11,12 @@
 [
   dup [_n] @                  { stack ["X" "X"], @ pops [_n] then "X"; bind _n; stack ["X"] }
   sp/alive?                      { pops "X", real connect-test; stack [cond] }
-  [ "[spco] spawn " _n str/cat log
+  [ "[spco] spawn " _n str/cat io/log
     "spci --serve --name " _n str/cat
     " --bus " str/cat sp/bus str/cat
     " &" str/cat
     sh/! drop
-    300 sleep
+    300 io/sleep
   ]                            { el: ran when cond is nil (name missing) }
   [ ]                          { th: ran when cond is t (name exists)    }
   rot                          { stack [el th cond] for if               }
