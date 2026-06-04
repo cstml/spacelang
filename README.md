@@ -324,19 +324,3 @@ etc.) and bind their sockets under the bus directory.
 t
 ```
 
-## Relation to other Forths
-
-The stack-language core is conventional Forth. Quotations (`[ ... ]`) are
-the Factor/gforth-`[:...;]` idiom. The `require`-with-static-inline trick
-is closest to **lbForth** (source-to-C, single binary). `spcc`'s
-distribution model — compiler + headers + runtime archive sitting next to
-each other — is the gcc shape.
-
-What's not from Forth: the mesh primitives (`$ / $! / $?`), the
-filesystem-based discovery in `spco`, the `with-spco.sp` ensure-then-send
-helper, and the on-demand `spawn-node` flow. If you ported the project
-to **Factor**, the kernel work would shrink dramatically and the mesh
-layer would still be the interesting part.
-
-The design rationale for `spcc` is in
-`docs/superpowers/specs/2026-06-02-spcc-c-compiler-design.md`.
