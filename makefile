@@ -1,35 +1,31 @@
-lisp_files := $(wildcard *.lisp)
-asd_files := $(wildcard *.asd)
+.PHONY: all clean test DockerRun
 
-bin/spci: bin/ $(lisp_files) $(asd_files)
-	sbcl --disable-debugger \
-	     --eval '(ql:quickload "spacelang")' \
-	     --eval '(asdf:load-system "spacelang")' \
-	     --eval '(use-package :spacelang)' \
-	     --eval "(sb-ext:save-lisp-and-die #p\"bin/spci\" :toplevel #'space! :executable t)"
+all: spci spcc spco libspci.a
 
-bin/:
-	mkdir bin
+spci.o: spci.c spci.h
+	cc -O2 -Wall -Wextra -c -o $@ spci.c
 
-.PHONY: DockerRun
+libspci.a: spci.o
+	ar rcs $@ $<
+
+spci: spci.o spci_main.c spci.h
+	cc -O2 -Wall -Wextra -o $@ spci_main.c spci.o
+
+spcc: spcc.c
+	cc -O2 -Wall -Wextra -o $@ spcc.c
+
+spco: spco.sp spcc libspci.a spci.h
+	./spcc --as spco spco.sp -o $@
+
+clean:
+	rm -f spci spcc spco spci.o libspci.a
+
+test:
+	python3 test_harness.py
+
+test-quick:
+	python3 test_harness.py --quick
 
 DockerRun:
 	docker build . -t spacelang
 	docker run -it spacelang
-
-compiler:
-	sbcl \
-    --disable-debugger \
-	  --eval '(ql:quickload "spacelang")' \
-	  --eval '(asdf:load-system "spacelang")' \
-	  --eval '(use-package :spacelang.compiler)' \
-    --eval '(compiler)'
-
-bake:
-	sbcl --disable-debugger \
-	     --eval '(ql:quickload "spacelang")' \
-	     --eval '(asdf:load-system "spacelang")' \
-	     --eval '(use-package :spacelang.compiler)' \
-       --eval '(bake-binary\
-									 #p "/home/cstml/.quicklisp/local-projects/spacelang/bin/baked"\
-									 #p"/home/cstml/.quicklisp/local-projects/spacelang/example/add_2.sp")'
