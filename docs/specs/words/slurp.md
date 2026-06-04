@@ -1,4 +1,4 @@
-# `slurp`
+# `io/slurp`
 
 **Category:** I/O  
 **Stack:** ` -- s`  
@@ -8,7 +8,7 @@ Reads one line from stdin (newline stripped) and pushes it as a string. Returns 
 
 ## Examples
 ```
-> slurp .
+> io/slurp .
 hello world
 "hello world"
 ```

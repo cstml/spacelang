@@ -1,1 +1,1 @@
-slurp eval slurp eval + . 
+io/slurp eval io/slurp eval + . 

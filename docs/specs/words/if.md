@@ -8,9 +8,9 @@ Pops a condition and two thunks. Runs the **then** thunk (pushed second, top of 
 
 ## Examples
 ```
-> [ `no` log ] [ `yes` log ] true if
+> [ `no` io/log ] [ `yes` io/log ] true if
 yes
-> [ `no` log ] [ `yes` log ] 0 if
+> [ `no` io/log ] [ `yes` io/log ] 0 if
 no
 ```
 

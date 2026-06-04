@@ -80,7 +80,7 @@ def output_matches(spci_stdout, compiled_bin):
 def cleanup_bus():
     """Nuke the bus directory and any stuck processes."""
     subprocess.run(["pkill", "-f", f"BUS={BUS}"], capture_output=True)
-    time.sleep(0.15)
+    time.io/sleep(0.15)
     shutil.rmtree(BUS, ignore_errors=True)
     os.makedirs(BUS, exist_ok=True)
 
@@ -224,10 +224,10 @@ class TestEval(TimedTestCase):
         self.assertIn("3", out)
 
     def test_slurp(self):
-        # slurp returns a string, so use eval to convert to number
+        # io/slurp returns a string, so use eval to convert to number
         import tempfile
         with tempfile.NamedTemporaryFile(mode="w", suffix=".sp", delete=False) as f:
-            f.write("slurp eval 1 + .\n")  # slurp string, eval→num, add 1
+            f.write("io/slurp eval 1 + .\n")  # io/slurp string, eval→num, add 1
             tmp = f.name
         try:
             out, err, rc = run_spci(stdin="41\n", args=[tmp], timeout=3)
@@ -242,7 +242,7 @@ class TestEval(TimedTestCase):
 
     def test_sleep(self):
         t0 = time.time()
-        self.eval("200 sleep")
+        self.eval("200 io/sleep")
         self.assertGreaterEqual(time.time() - t0, 0.18)
 
     def test_sh(self):
@@ -430,12 +430,12 @@ class TestCompile(TimedTestCase):
         self.compile_and_compare("[99] [42] false if .", "")
 
     def test_example_add2(self):
-        # add_2.sp is interactive (slurp slurp +) — requires stdin typing.
+        # add_2.sp is interactive (io/slurp io/slurp +) — requires stdin typing.
         # Skip compilation test for interactive examples.
         self.skipTest("add_2.sp is interactive, needs stdin typing")
 
     def test_example_fib(self):
-        # fibonacci.sp reads count from stdin via slurp eval
+        # fibonacci.sp reads count from stdin via io/slurp eval
         sp = Path(self.tmp) / "fib.sp"
         sp.write_text((ROOT / "example/fibonacci.sp").read_text())
         bin_path = str(Path(self.tmp) / "fib_bin")
@@ -1103,7 +1103,7 @@ class TestSpcd(unittest.TestCase):
         seed = FIXDIR / "_seed-bin"
         shutil.rmtree(seed, ignore_errors=True)
         seed.mkdir(parents=True)
-        (seed / "main.sp").write_text('`hello from binrepo` log\n')
+        (seed / "main.sp").write_text('`hello from binrepo` io/log\n')
         cls._git_init_and_bare(seed, bare)
         shutil.rmtree(seed, ignore_errors=True)
 
@@ -1250,7 +1250,7 @@ class TestMesh(TimedTestCase):
         if self.spco_proc:
             try: self.spco_proc.kill()
             except: pass
-        time.sleep(0.15)
+        time.io/sleep(0.15)
         cleanup_bus()
 
     def start_spco(self):
@@ -1264,7 +1264,7 @@ class TestMesh(TimedTestCase):
         while time.time() < deadline:
             if os.path.exists(f"{BUS}/spco.sock"):
                 return
-            time.sleep(0.05)
+            time.io/sleep(0.05)
         self.fail("spco didn't bind spco.sock")
 
     def start_worker(self, name, script=""):
@@ -1281,7 +1281,7 @@ class TestMesh(TimedTestCase):
         while time.time() < deadline:
             if os.path.exists(f"{BUS}/{name}.sock"):
                 return
-            time.sleep(0.05)
+            time.io/sleep(0.05)
         self.fail(f"{name} did not bind")
 
     def test_spco_starts_and_binds(self):
@@ -1296,16 +1296,16 @@ class TestMesh(TimedTestCase):
         # Driver sends `"X" spawn-node !` to spco via $!
         # spco receives EVAL, feeds payload, spawn-node forks an spci.
         out, err, rc = run_spci(
-            stdin='[ "X" spawn-node ! ] "spco" $!  500 sleep  bye!\n',
+            stdin='[ "X" spawn-node ! ] "spco" $!  500 io/sleep  bye!\n',
             args=["--name", "DRV", "--bus", BUS],
             timeout=4,
         )
         self.assertEqual(rc, 0, f"spci failed:\n{err}")
-        # Give spawn-node's sh/! + sleep time to bind X.
+        # Give spawn-node's sh/! + io/sleep time to bind X.
         for _ in range(20):
             if os.path.exists(f"{BUS}/X.sock"):
                 break
-            time.sleep(0.1)
+            time.io/sleep(0.1)
         self.assertTrue(os.path.exists(f"{BUS}/X.sock"),
             "spco should have spawned X via spawn-node")
         # Clean up X
@@ -1348,12 +1348,12 @@ class TestMesh(TimedTestCase):
         _, err, rc = run_spci(stdin="bye!\n",
             args=["--name", "C1", "--bus", BUS, str(p1)], timeout=4)
         self.assertEqual(rc, 0, err)
-        time.sleep(0.4)
+        time.io/sleep(0.4)
         self.assertTrue(os.path.exists(f"{BUS}/Z.sock"))
 
         # kill Z hard, leave stale socket on disk
         subprocess.run(["pkill", "-9", "-f", "name Z"], capture_output=True)
-        time.sleep(0.3)
+        time.io/sleep(0.3)
         # touch the file to ensure it stays (SIGKILL may have left it anyway)
         Path(f"{BUS}/Z.sock").touch(exist_ok=True)
 
@@ -1366,7 +1366,7 @@ class TestMesh(TimedTestCase):
         _, err, rc = run_spci(stdin="bye!\n",
             args=["--name", "C2", "--bus", BUS, str(p2)], timeout=4)
         self.assertEqual(rc, 0, err)
-        time.sleep(0.5)
+        time.io/sleep(0.5)
         # Real test: connect to Z.sock and confirm it accepts
         try:
             s = socket.socket(socket.AF_UNIX, socket.SOCK_STREAM)
@@ -1390,7 +1390,7 @@ class TestMesh(TimedTestCase):
         _, err, rc = run_spci(stdin="bye!\n",
             args=["--name", "C", "--bus", BUS, str(prog)], timeout=4)
         self.assertEqual(rc, 0, err)
-        time.sleep(0.5)
+        time.io/sleep(0.5)
         self.assertTrue(os.path.exists(f"{BUS}/W2.sock"),
             "W2 should have been spawned via spco/$!")
         subprocess.run(["pkill", "-f", "name W2"], capture_output=True)
@@ -1417,7 +1417,7 @@ class TestMesh(TimedTestCase):
         for _ in range(20):
             if os.path.exists(f"{BUS}/Y.sock"):
                 break
-            time.sleep(0.1)
+            time.io/sleep(0.1)
         self.assertTrue(os.path.exists(f"{BUS}/Y.sock"),
             "Y should have been spawned via via-spco")
         subprocess.run(["pkill", "-f", "name Y"], capture_output=True)

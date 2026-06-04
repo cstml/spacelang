@@ -60,7 +60,7 @@ A typical test file calls:
 
 ## Words
 
-All output goes to stderr via the `log` built-in.
+All output goes to stderr via the `io/log` built-in.
 
 ### `test/reset`
 

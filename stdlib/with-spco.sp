@@ -18,13 +18,13 @@
   '[ "' swap str/cat '" spawn-node ]' str/cat eval
 ] [_spco-src] @
 
-{ Internal: ask spco to ensure [name] is up, then briefly sleep.      }
+{ Internal: ask spco to ensure [name] is up, then briefly io/sleep.      }
 { Stack effect: [name] -- [name]  (consumes net 0; [name] preserved)  }
 [
   dup wo/name>str         { [name] "name" }
   _spco-src            { [name] thunk }
   "spco" $!            { [name] -- (EVAL sent) }
-  500 sleep
+  500 io/sleep
 ] [_spco-ensure] @
 
 { Public: spco-aware versions of $, $!, $?                            }

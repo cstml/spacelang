@@ -1,4 +1,4 @@
-# `sleep`
+# `io/sleep`
 
 **Category:** Keywords  
 **Stack:** `ms -- `  
@@ -8,7 +8,7 @@ Sleeps for `ms` milliseconds.
 
 ## Examples
 ```
-> 500 sleep
+> 500 io/sleep
 ```
 
 ## Errors / notes

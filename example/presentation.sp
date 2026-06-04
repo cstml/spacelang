@@ -60,7 +60,7 @@
 
 
   " ,] [newPage] @
-[slurp newPage !] [waitForCharacter] @
+[io/slurp newPage !] [waitForCharacter] @
 
 [_s] [results] @
 
