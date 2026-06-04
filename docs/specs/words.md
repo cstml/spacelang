@@ -65,6 +65,7 @@ One file per built-in word. Each spec covers stack effect, semantics, an example
 
 ## Strings (C)
 
+- [`str/->str`](words/str-to-str.md)
 - [`str/cat`](words/str-cat.md)
 - [`str/len`](words/str-len.md)
 - [`str/sub`](words/str-sub.md)

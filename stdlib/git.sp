@@ -17,6 +17,7 @@
 { reentrant — don't call git/ functions from within themselves.            }
 
 "github.com/cstml/spacelang/stdlib/str.sp" require
+"github.com/cstml/spacelang/stdlib/log.sp" require
 
 { ===================================================================
   URL helpers
@@ -65,11 +66,23 @@
   Clone operations
   =================================================================== }
 
+{ git/!: cmd -- ; run via sh, abort with log/error on non-zero exit.
+  Use this instead of `sh/! drop` for git commands so that clone/checkout
+  failures (missing branch, network error, bad SHA) stop spcd instead
+  of silently producing an empty spcd_lib and a bogus lock.sp. }
+[ { cmd -- }
+  [gx-c] @
+  [ `git failed: ` gx-c str/cat log/error bye! ]
+  [ ]
+  gx-c sh/! 0 =
+  if
+] [git/!] @
+
 { git/clone: shallow clone, default branch.  url target -- }
 [ { url target -- }
   [gc-t] @  [gc-u] @
   `git clone --depth 1 ` gc-u git/url-https str/cat ` "` str/cat gc-t str/cat `" >&2` str/cat
-  sh/! drop
+  git/!
 ] [git/clone] @
 
 { git/clone-branch: shallow clone with --branch.  url branch target -- }
@@ -77,7 +90,7 @@
   [gcb-t] @  [gcb-b] @  [gcb-u] @
   `git clone --depth 1 --branch "` gcb-b str/cat `" ` str/cat
   gcb-u git/url-https str/cat ` "` str/cat gcb-t str/cat `" >&2` str/cat
-  sh/! drop
+  git/!
 ] [git/clone-branch] @
 
 { git/clone-sha: full clone + checkout specific SHA.  url sha target -- }
@@ -85,10 +98,10 @@
   [gcs-t] @  [gcs-s] @  [gcs-u] @
   { First: full clone }
   `git clone ` gcs-u git/url-https str/cat ` "` str/cat gcs-t str/cat `" >&2` str/cat
-  sh/! drop
+  git/!
   { Then: checkout the SHA }
   `git -C "` gcs-t str/cat `" checkout "` str/cat gcs-s str/cat `" >&2` str/cat
-  sh/! drop
+  git/!
 ] [git/clone-sha] @
 
 

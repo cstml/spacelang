@@ -613,6 +613,37 @@ class TestStr(TimedTestCase):
         out = self.lib_eval('"abcabc" "c" str/index .')
         self.assertIn("2", out)
 
+    # ----- str/->str: value → string representation -----
+
+    def test_to_str_number(self):
+        out = self.eval('42 str/->str .')
+        self.assertIn('"42"', out)
+        out = self.eval('-7 str/->str .')
+        self.assertIn('"-7"', out)
+        out = self.eval('0 str/->str .')
+        self.assertIn('"0"', out)
+
+    def test_to_str_bool(self):
+        out = self.eval('true str/->str .')
+        self.assertIn('"true"', out)
+        out = self.eval('false str/->str .')
+        self.assertIn('"false"', out)
+
+    def test_to_str_nil(self):
+        # nil is the number 0, so it round-trips as "0"
+        out = self.eval('nil str/->str .')
+        self.assertIn('"0"', out)
+
+    def test_to_str_string_identity(self):
+        out = self.eval('"hello" str/->str .')
+        self.assertIn('"hello"', out)
+        out = self.eval('"" str/->str .')
+        self.assertIn('""', out)
+
+    def test_to_str_thunk(self):
+        out = self.eval('[1 2 +] str/->str .')
+        self.assertIn('"[1 2 +]"', out)
+
 
 # ── require preprocessor (spcc inlines required files) ──────────────
 

@@ -988,6 +988,18 @@ static void eval_word(const char *w) {
         return;
     }
 
+    /* str/->str: v -- s  (convert any value to its string representation) */
+    if (!strcmp(w, "str/->str")) {
+        Value *v = pop();
+        SBuf sb = {0};
+        format_value(&sb, v);
+        Value *r = v_str(sb.buf ? sb.buf : "");
+        free(sb.buf);
+        v_unref(v);
+        push(r);
+        return;
+    }
+
     /* sh/! — pop a string, run it via /bin/sh -c, push exit status */
     if (!strcmp(w, "sh/!")) {
         Value *t = pop();

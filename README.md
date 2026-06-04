@@ -132,7 +132,7 @@ sh/|>  { "input" "cmd" → pipe input into stdin, push captured stdout }
 
 **Strings** (C primitives; the `str/` library adds helpers on top):
 ```
-str/cat str/len str/sub str/ord str/chr str/eq
+str/cat str/len str/sub str/ord str/chr str/eq str/->str
 ```
 
 After `"str/str.sp" require` you also get:

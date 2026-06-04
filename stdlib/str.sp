@@ -7,6 +7,7 @@
 {   str/ord   s -- byte-value (or -1 for empty)                      }
 {   str/chr   n -- 1-char string                                     }
 {   str/eq    a b -- bool                                            }
+{   str/->str v -- s  (convert any value to its string repr)         }
 {                                                                    }
 { Built here, on top:                                                }
 {   str/empty?       s -- bool                                       }
@@ -187,8 +188,6 @@
 ] [str/strip-nl] @
 
 
-{ ----- str/->str: convert a value to its string representation.        }
-{ TODO: currently only works for values that are already strings.      }
-{ For numbers, store counters as strings and use shell expr.           }
-
-[ { v -- str } ] [str/->str] @
+{ ----- str/->str: convert any value to its string representation.     }
+{ Provided by the runtime (in C). Handles numbers, strings, bools,     }
+{ words, and thunks.                                                   }
