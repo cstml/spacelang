@@ -19,6 +19,7 @@ Prerequisites: `make` must succeed first.
 
 import subprocess
 import os
+import re
 import sys
 import time
 import random
@@ -35,6 +36,7 @@ SPCI  = str(ROOT / "bin" / "spci")
 SPCC  = str(ROOT / "bin" / "spcc")
 SPCO  = str(ROOT / "bin" / "spco")
 SPCT  = str(ROOT / "bin" / "spct")
+SPCDBG = str(ROOT / "bin" / "spcdbg")
 BUS   = "/tmp/spacelang_test"
 
 # Per-test hard timeout (seconds). Any test exceeding this raises and fails.
@@ -1027,6 +1029,296 @@ class TestProperty(TimedTestCase):
             self.fail(msg)
 
 
+# ── spcdbg: gdb-like stepper for spacelang ────────────────────────────
+
+def run_spcdbg(sp_file=None, stdin="", args=(), timeout=4):
+    """Run spcdbg, returning (stdout, stderr, returncode)."""
+    argv = [SPCDBG] + list(args)
+    if sp_file is not None:
+        argv.append(str(sp_file))
+    p = subprocess.run(argv, input=stdin, capture_output=True, text=True, timeout=timeout)
+    return p.stdout, p.stderr, p.returncode
+
+
+class TestSpcdbg(TimedTestCase):
+    """Debugger driver — per-word stepping over a loaded file."""
+
+    def _write(self, code):
+        d = Path(tempfile.mkdtemp(prefix="spcdbg_"))
+        self.addCleanup(shutil.rmtree, d, ignore_errors=True)
+        f = d / "p.sp"
+        f.write_text(code)
+        return f
+
+    def test_quit_exits_cleanly(self):
+        """`q` at the initial debugger prompt exits with status 0."""
+        f = self._write("1 2 +\n")
+        out, err, rc = run_spcdbg(sp_file=f, stdin="q\n")
+        self.assertEqual(rc, 0, f"stderr: {err}")
+
+    def test_cycle_counter_uses_at_symbol(self):
+        """View header uses `@` for the cycle counter, and the count reflects
+        actual evaluation cycles — including silent ones from `<N> s`."""
+        f = self._write("1 2 3 4 5\n")
+        out, err, rc = run_spcdbg(sp_file=f, stdin="5 s\nq\n")
+        self.assertEqual(rc, 0, f"stderr: {err}")
+        # No `step` label any more.
+        self.assertNotIn("step", err.lower())
+        # `5 s` advances 5 cycles; header shows @ 5.
+        self.assertRegex(err, r"@\s*5\b")
+
+    def test_step_with_repeat_count(self):
+        """`N s` performs N steps and stops on the Nth."""
+        f = self._write("1 2 3 4 5 6\n")
+        out, err, rc = run_spcdbg(sp_file=f, stdin="5 s\nq\n")
+        self.assertEqual(rc, 0, f"stderr: {err}")
+        self.assertRegex(err, r"(?m)^>\s+5\s*$")
+
+    def test_next_with_repeat_count(self):
+        """`N n` performs N step-overs."""
+        # All top-level terms (no user words), so n behaves like s here.
+        f = self._write("1 2 3 4 5 6\n")
+        out, err, rc = run_spcdbg(sp_file=f, stdin="4 n\nq\n")
+        self.assertEqual(rc, 0, f"stderr: {err}")
+        self.assertRegex(err, r"(?m)^>\s+4\s*$")
+
+    def test_watch_short_aliases_wa_wd(self):
+        """`wa <name>` adds a watch and `wd <name>` removes it."""
+        f = self._write("1 [i] @\ni\n")
+        out, err, rc = run_spcdbg(sp_file=f, stdin="s\ns\ns\nwa i\ns\nwd i\ns\nq\n")
+        self.assertEqual(rc, 0, f"stderr: {err}")
+        self.assertNotIn("unknown command", err)
+        self.assertIn("i = 1", err)
+        # Watches panel appears exactly once (until wd removes it).
+        self.assertEqual(err.count("watches:"), 1, err)
+
+    def test_watch_trims_trailing_whitespace(self):
+        """`watch add i ` (trailing space) must look up `i`, not `i `."""
+        f = self._write("1 [i] @\ni\n")
+        out, err, rc = run_spcdbg(sp_file=f, stdin="s\ns\ns\nwatch add i \ns\nq\n")
+        self.assertEqual(rc, 0, f"stderr: {err}")
+        # After binding i to 1, watching `i ` should resolve to its value, not
+        # report it as (unbound).
+        self.assertIn("i = 1", err)
+        self.assertNotIn("i = (unbound)", err)
+
+    def test_watch_add_and_remove(self):
+        """`watch add foo` shows `foo` in the watches panel of subsequent
+        renders. `watch remove foo` drops it again."""
+        f = self._write("[ 1 ] [foo] @\nfoo\n")
+        # Step past binding, add watch, step (see watches), remove, step, q.
+        out, err, rc = run_spcdbg(
+            sp_file=f,
+            stdin="s\ns\ns\nwatch add foo\ns\nwatch remove foo\ns\nq\n",
+        )
+        self.assertEqual(rc, 0, f"stderr: {err}")
+        self.assertNotIn("unknown command", err)
+        # Watches panel appears exactly once — when watching, not after remove.
+        self.assertRegex(err, r"(?s)watches:.*foo")
+        self.assertEqual(err.count("watches:"), 1, err)
+
+    def test_toggle_bindings_view(self):
+        """`w` toggles a panel listing user-defined bindings currently in scope.
+        After `[ 1 ] [foo] @` binds `foo`, toggling on should show `foo`."""
+        f = self._write("[ 1 ] [foo] @\nfoo\n")
+        # Step past [1], [foo], @ (now foo is bound), then `w` toggles, render.
+        out, err, rc = run_spcdbg(sp_file=f, stdin="s\ns\ns\nw\ns\nq\n")
+        self.assertEqual(rc, 0, f"stderr: {err}")
+        self.assertNotIn("unknown command", err)
+        # After toggling on, the next render should show a bindings section
+        # listing `foo`.
+        after_w = err.split("w\n", 1)
+        # Either the render after `w` has bindings panel; just assert `foo` is
+        # somewhere alongside a bindings label.
+        self.assertRegex(err, r"(?s)bindings:.*foo")
+
+    def test_render_layout(self):
+        """`>` on the current instruction, `>>` on the next, a separator line
+        before the stack, and no trailing `next:` line."""
+        f = self._write("1 2 +\n")
+        out, err, rc = run_spcdbg(sp_file=f, stdin="s\nq\n")
+        self.assertEqual(rc, 0, f"stderr: {err}")
+        # `>` cursor on `1` and `>>` on `2`.
+        self.assertRegex(err, r"(?m)^>\s+1\b")
+        self.assertRegex(err, r"(?m)^>>\s+2\b")
+        # Dashed separator lines above and below the stack.
+        self.assertRegex(err, r"(?s)-{6,}\nstack:.*\n-{6,}")
+        # No `── next: ... ──` footer.
+        self.assertNotIn("next:", err)
+
+    def test_step_stops_at_thunk_literals(self):
+        """`s` should pause at every top-level term, including thunk pushes —
+        not skip them."""
+        f = self._write("[ 1 ] [foo] @\n")
+        # First `s` should stop at the first term `[ 1 ]`, not jump to `@`.
+        out, err, rc = run_spcdbg(sp_file=f, stdin="s\nq\n")
+        self.assertEqual(rc, 0, f"stderr: {err}")
+        # The first announced step is the thunk `[ 1 ]`, not `@`.
+        self.assertRegex(err, r">\s*\[\s*1\s*\]")
+        # And `@` should NOT have been announced yet.
+        self.assertNotIn("next: @", err)
+
+    def test_view_steps_into_user_word_body(self):
+        """When stepping into a user-defined word, the rendered source view
+        switches to that word's body."""
+        f = self._write("[ 1 2 + ] [foo] @\nfoo\n")
+        # Per-term stepping: s→[1 2 +], s→[foo], s→@, s→foo, s→descend.
+        out, err, rc = run_spcdbg(sp_file=f, stdin="s\ns\ns\ns\ns\nq\n")
+        self.assertEqual(rc, 0, f"stderr: {err}")
+        # While inside foo, header announces we're in foo (step counter may
+        # follow the name in the header).
+        self.assertRegex(err, r"── in foo")
+        # And the body's instructions are in the listing under that header.
+        in_foo = re.split(r"── in foo[^\n]*\n", err, maxsplit=1)[1]
+        self.assertIn("1", in_foo)
+        self.assertIn("+", in_foo)
+
+    def test_source_view_shows_marker_at_current_term(self):
+        """On every stop, render the program with each top-level instruction
+        on its own line and a `>` cursor at the term about to execute."""
+        f = self._write("1 2 + .\n")
+        # Per-term stepping: s→1, s→2, s→+. Render should mark `+` on the 3rd.
+        out, err, rc = run_spcdbg(sp_file=f, stdin="s\ns\ns\nq\n")
+        self.assertEqual(rc, 0, f"stderr: {err}")
+        # `>` on the line with `+`.
+        self.assertRegex(err, r">\s*\+")
+
+    def test_stack_rendered_one_row(self):
+        """Stack is shown on a single row underneath the source view."""
+        f = self._write("1 2 +\n")
+        # Step past 1 and 2 (pushed) to reach +; stack now has 1 and 2.
+        out, err, rc = run_spcdbg(sp_file=f, stdin="s\ns\ns\nq\n")
+        self.assertEqual(rc, 0, f"stderr: {err}")
+        self.assertRegex(err, r"stack:.*1.*2")
+
+    def test_step_auto_prints_stack(self):
+        """On every stop, the whole data stack is printed below the
+        `next:` line so consecutive identical words (e.g. many `@`s) can be
+        distinguished by what's about to be consumed."""
+        f = self._write("[ 1 ] [foo] @\n")
+        # Step past [ 1 ] and [foo] to reach @; stack has both thunks.
+        out, err, rc = run_spcdbg(sp_file=f, stdin="s\ns\ns\nq\n")
+        self.assertEqual(rc, 0, f"stderr: {err}")
+        # The `>` cursor should land on the `@` term.
+        self.assertRegex(err, r"(?m)^>\s+@\s*$")
+        self.assertIn("foo", err)
+        self.assertIn("1", err)
+
+    def test_print_stack_when_empty_shows_marker(self):
+        """When the data stack is empty, `p` prints a clear marker instead of
+        nothing — otherwise the user can't tell the command ran."""
+        # Bind a thunk: `[ 1 ] [foo] @` consumes the thunk + the [foo] term,
+        # leaving the stack empty. Step until we're past the @.
+        # After `@` binds, stack is empty. Then `foo` is the next stop.
+        f = self._write("[ 1 ] [foo] @\nfoo\n")
+        out, err, rc = run_spcdbg(sp_file=f, stdin="s\ns\np\nq\n")
+        self.assertEqual(rc, 0, f"stderr: {err}")
+        self.assertIn("empty", err.lower())
+
+    def test_empty_line_repeats_last_command(self):
+        """An empty prompt line re-runs the previous command (gdb behavior).
+        After `s` we stop at a term; bare Enter steps again — we should see
+        two distinct terms announced from `1 2`."""
+        f = self._write("1 2 + .\n")
+        out, err, rc = run_spcdbg(sp_file=f, stdin="s\n\nq\n")
+        self.assertEqual(rc, 0, f"stderr: {err}")
+        # Two distinct stops: cursor on `1`, then on `2`.
+        self.assertRegex(err, r"(?m)^>\s+1\b")
+        self.assertRegex(err, r"(?m)^>\s+2\b")
+
+    def test_help_lists_commands(self):
+        f = self._write("1\n")
+        out, err, rc = run_spcdbg(sp_file=f, stdin="help\nq\n")
+        self.assertEqual(rc, 0, f"stderr: {err}")
+        self.assertNotIn("unknown command", err)
+        # Must mention the core commands.
+        for cmd in ("step", "cont", "break", "bt", "quit"):
+            self.assertIn(cmd, err, f"help missing {cmd!r}")
+
+    def test_next_steps_over_user_word(self):
+        """`n` at the entry of a user-defined word should run that word to
+        completion without stopping inside it."""
+        f = self._write("[ 1 2 + ] [foo] @\nfoo .\n")
+        # Step per-term: s→[1 2 +], s→[foo], s→@, s→foo (about to descend),
+        # n over foo, then we stop at `.`.
+        out, err, rc = run_spcdbg(sp_file=f, stdin="s\ns\ns\ns\nn\nq\n")
+        self.assertEqual(rc, 0, f"stderr: {err}")
+        # `+` should never have been the current cursor (would mean we stopped
+        # inside foo's body); `.` should be the cursor after stepping over.
+        self.assertNotRegex(err, r"(?m)^>\s+\+\b")
+        self.assertRegex(err, r"(?m)^>\s+\.")
+
+    def test_backtrace_shows_enclosing_word(self):
+        """When stopped inside a user-defined word, `bt` lists it as a frame."""
+        f = self._write("[ 1 2 + ] [foo] @\nfoo\n")
+        out, err, rc = run_spcdbg(sp_file=f, stdin="b +\nc\nbt\nc\n")
+        self.assertEqual(rc, 0, f"stderr: {err}")
+        self.assertNotIn("unknown command", err)
+        # The bt output should mention `foo` (the enclosing user word).
+        # Find the line(s) after `bt` was issued.
+        self.assertIn("foo", err)
+
+    def test_breakpoint_by_word_name(self):
+        """`b +` then `c` stops just before `+` executes; another `c` runs to end."""
+        f = self._write("1 2 + .\n")
+        out, err, rc = run_spcdbg(sp_file=f, stdin="b +\nc\np\nc\n")
+        self.assertEqual(rc, 0, f"stderr: {err}")
+        # Hit the breakpoint at +, then printed final 3.
+        self.assertIn("+", err)
+        self.assertIn("3", out)
+        # And the stack at the break should still have 1 and 2.
+        self.assertIn("1", err)
+        self.assertIn("2", err)
+
+    def test_info_b_lists_breakpoints(self):
+        f = self._write("1\n")
+        out, err, rc = run_spcdbg(sp_file=f, stdin="b foo\nb bar\ninfo b\nq\n")
+        self.assertEqual(rc, 0)
+        # Reject the trivial false-positive of the echoed command line.
+        self.assertNotIn("unknown command", err)
+        self.assertIn("foo", err)
+        self.assertIn("bar", err)
+
+    def test_delete_breakpoint(self):
+        """`d +` removes a breakpoint; `c` then runs to end without stopping."""
+        f = self._write("1 2 + .\n")
+        out, err, rc = run_spcdbg(sp_file=f, stdin="b +\nd +\nc\n")
+        self.assertEqual(rc, 0, f"stderr: {err}")
+        self.assertIn("3", out)
+        self.assertNotIn("unknown command", err)
+        # `bp: +` (the break-hit marker) should NOT appear.
+        self.assertNotIn("bp:", err)
+
+    def test_print_stack_shows_values(self):
+        """At a step-stop, `p` shows the current data stack.
+        After `s` past `1 2`, top should be 2 with 1 underneath, before `+`."""
+        f = self._write("1 2 +\n")
+        # First `s` stops at the first WORD token = `+`. By then 1 and 2
+        # are on the stack (literals push without entering eval_word).
+        out, err, rc = run_spcdbg(sp_file=f, stdin="s\np\nq\n")
+        self.assertEqual(rc, 0, f"stderr: {err}")
+        # Stack output should mention both numbers.
+        self.assertIn("1", err)
+        self.assertIn("2", err)
+
+    def test_continue_runs_to_end(self):
+        """`c` clears stepping and lets the program finish without prompts.
+        We use `.` (print) so successful execution produces visible output."""
+        f = self._write("1 2 + .\n")
+        out, err, rc = run_spcdbg(sp_file=f, stdin="c\n")
+        self.assertEqual(rc, 0, f"stderr: {err}")
+        self.assertIn("3", out)
+
+    def test_step_announces_next_word(self):
+        """`s` runs one word and announces it before stopping again.
+        Program `1 2 +`: literals push silently, the first `word` token to
+        eval is `+`. After one `s` we expect to see `+` reported on stderr."""
+        f = self._write("1 2 +\n")
+        out, err, rc = run_spcdbg(sp_file=f, stdin="s\nq\n")
+        self.assertEqual(rc, 0, f"stderr: {err}")
+        self.assertIn("+", err)
+
+
 # ── spcd integration: package manager verbs against local bare repos ──
 
 SPCD   = str(ROOT / "bin" / "spcd")
@@ -1474,6 +1766,7 @@ if __name__ == "__main__":
         suite.addTests(loader.loadTestsFromTestCase(TestSpct))
         suite.addTests(loader.loadTestsFromTestCase(TestProperty))
         suite.addTests(loader.loadTestsFromTestCase(TestSpcd))
+        suite.addTests(loader.loadTestsFromTestCase(TestSpcdbg))
     elif args.tests:
         for name in args.tests:
             suite.addTests(loader.loadTestsFromName(name))
@@ -1485,6 +1778,7 @@ if __name__ == "__main__":
         suite.addTests(loader.loadTestsFromTestCase(TestSpct))
         suite.addTests(loader.loadTestsFromTestCase(TestProperty))
         suite.addTests(loader.loadTestsFromTestCase(TestSpcd))
+        suite.addTests(loader.loadTestsFromTestCase(TestSpcdbg))
         suite.addTests(loader.loadTestsFromTestCase(TestMesh))
 
     runner = unittest.TextTestRunner(verbosity=2)

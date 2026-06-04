@@ -5,3 +5,5 @@ lib/libspci.a
 __pycache__/
 docs-internal
 .pi/
+sp-math
+sp-hello-world

@@ -745,7 +745,76 @@ static const char *binding_name(Value *v) {
     return NULL;
 }
 
+#ifdef SPC_DEBUG
+extern void spc_dbg_on_word(const char *w);
+
+/* Public helpers for the debugger driver. Print the current data stack to fp
+ * (top-of-stack last), one value per line. */
+void spc_dbg_show_stack(FILE *fp) {
+    if (S.len == 0) { fprintf(fp, "(empty)\n"); return; }
+    for (size_t i = 0; i < S.len; i++) {
+        SBuf sb = {0};
+        format_value(&sb, S.items[i]);
+        fprintf(fp, "[%zu] %.*s\n", i, (int)sb.len, sb.buf ? sb.buf : "");
+        free(sb.buf);
+    }
+}
+
+/* Format a single binding's value into `out`. Writes "(unbound)" if name
+ * isn't bound. */
+void spc_dbg_format_binding(const char *name, char *out, size_t cap) {
+    if (cap == 0) return;
+    Value *v = word_get(name);
+    if (!v) { snprintf(out, cap, "(unbound)"); return; }
+    SBuf sb = {0};
+    format_value(&sb, v);
+    size_t n = sb.len < cap - 1 ? sb.len : cap - 1;
+    if (sb.buf) memcpy(out, sb.buf, n);
+    out[n] = 0;
+    free(sb.buf);
+}
+
+/* Print all user-defined bindings (name + formatted value), one per line. */
+void spc_dbg_show_bindings(FILE *fp) {
+    if (W_len == 0) { fprintf(fp, "  (none)\n"); return; }
+    for (size_t i = 0; i < W_len; i++) {
+        SBuf sb = {0};
+        format_value(&sb, W[i].val);
+        fprintf(fp, "  %s = %.*s\n", W[i].name, (int)sb.len, sb.buf ? sb.buf : "");
+        free(sb.buf);
+    }
+}
+
+/* One-row stack rendering: ` a | b | c ← top` (or ` (empty)`). */
+void spc_dbg_show_stack_row(FILE *fp) {
+    if (S.len == 0) { fprintf(fp, " (empty)\n"); return; }
+    for (size_t i = 0; i < S.len; i++) {
+        SBuf sb = {0};
+        format_value(&sb, S.items[i]);
+        fprintf(fp, " %.*s%s", (int)sb.len, sb.buf ? sb.buf : "",
+                i + 1 == S.len ? " ← top" : " |");
+        free(sb.buf);
+    }
+    fputc('\n', fp);
+}
+
+/* Format the current top-of-stack value into `out`. Writes "" if empty. */
+void spc_dbg_top_str(char *out, size_t cap) {
+    if (cap == 0) return;
+    if (S.len == 0) { out[0] = 0; return; }
+    SBuf sb = {0};
+    format_value(&sb, S.items[S.len - 1]);
+    size_t n = sb.len < cap - 1 ? sb.len : cap - 1;
+    if (sb.buf) memcpy(out, sb.buf, n);
+    out[n] = 0;
+    free(sb.buf);
+}
+#endif
+
 static void eval_word(const char *w) {
+#ifdef SPC_DEBUG
+    spc_dbg_on_word(w);
+#endif
     /* keywords */
     if (!strcmp(w, "_s"))   { print_stack(); return; }
     if (!strcmp(w, "bye!")) { exit(0); }
@@ -1324,7 +1393,32 @@ static void eval_word(const char *w) {
      * raw thunk as data, bind it double-wrapped: [ [body] ] [name] @  */
     Value *bound = word_get(w);
     if (bound) {
-        if (bound->type == V_THUNK) run_thunk(bound);
+        if (bound->type == V_THUNK) {
+#ifdef SPC_DEBUG
+            extern void spc_dbg_enter(const char *w, const char **items, int n);
+            extern void spc_dbg_leave(void);
+            extern void spc_dbg_on_body_item(int i);
+            size_t n = bound->as.thunk.len;
+            const char **items = malloc(sizeof(char*) * (n ? n : 1));
+            char **owned = malloc(sizeof(char*) * (n ? n : 1));
+            for (size_t i = 0; i < n; i++) {
+                SBuf sb = {0};
+                format_value(&sb, bound->as.thunk.items[i]);
+                owned[i] = sb.buf ? sb.buf : strdup("");
+                items[i] = owned[i];
+            }
+            spc_dbg_enter(w, items, (int)n);
+            for (size_t i = 0; i < n; i++) {
+                spc_dbg_on_body_item((int)i);
+                eval(v_clone(bound->as.thunk.items[i]));
+            }
+            spc_dbg_leave();
+            for (size_t i = 0; i < n; i++) free(owned[i]);
+            free(owned); free(items);
+#else
+            run_thunk(bound);
+#endif
+        }
         else                         push(v_clone(bound));
         return;
     }
@@ -1353,8 +1447,16 @@ static void eval(Value *t) {
 
 /* a parsed top-level word like "_s" arrives as two tokens (":" then "s")
  * because of our single-char op rule. Fuse them at the source feeder. */
+#ifdef SPC_DEBUG
+extern void spc_dbg_on_term(void);
+static int spc_dbg_feed_depth = 0;
+#endif
+
 void feed(const char *src) {
     Lex L = { src, 0, strlen(src) };
+#ifdef SPC_DEBUG
+    spc_dbg_feed_depth++;
+#endif
     for (;;) {
         skip_ws(&L);
         if (L.i >= L.n) break;
@@ -1371,6 +1473,9 @@ void feed(const char *src) {
                 char *buf = malloc(L.i - start + 1);
                 memcpy(buf, L.src + start, L.i - start);
                 buf[L.i - start] = 0;
+#ifdef SPC_DEBUG
+                if (spc_dbg_feed_depth == 1) spc_dbg_on_term();
+#endif
                 eval(v_word(buf));
                 free(buf);
                 continue;
@@ -1378,7 +1483,15 @@ void feed(const char *src) {
         }
 
         Value *t = parse_term(&L);
-        if (t) eval(t);
+        if (t) {
+#ifdef SPC_DEBUG
+            if (spc_dbg_feed_depth == 1) spc_dbg_on_term();
+#endif
+            eval(t);
+        }
     }
+#ifdef SPC_DEBUG
+    spc_dbg_feed_depth--;
+#endif
 }
 
