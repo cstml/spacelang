@@ -62,7 +62,7 @@
   " ,] [newPage] @
 [slurp newPage !] [waitForCharacter] @
 
-[:s] [results] @
+[_s] [results] @
 
 [ . waitForCharacter ! ] [printThenWait] @
 "Hello and welcome to TechDive presentation of spacelang" ,

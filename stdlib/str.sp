@@ -1,4 +1,4 @@
-{ str/str.sp -- string library, built on the str/ C primitives. }
+{ lib/str.sp -- string library, built on the str/ C primitives. }
 {                                                                    }
 { Provided by the runtime (in C):                                    }
 {   str/cat   a b -- a++b                                            }
@@ -18,6 +18,7 @@
 {   str/ends-with?   s p -- bool                                     }
 {   str/contains?    s p -- bool                                     }
 {   str/index        s p -- first index of p in s, or -1             }
+{   str/strip-nl     s -- s'  (drop single trailing newline)         }
 {                                                                    }
 { Implementation note: helpers use global scratch bindings prefixed  }
 { with the function name (e.g. str/_rep-acc). They are therefore     }
@@ -33,7 +34,7 @@
 { ----- str/reverse: pure-stack (acc src) loop ----- }
 
 [
-  dup str/empty?
+  dup str/empty? [str/_rev-empty?] @
   [ { else: src non-empty }
     dup 0 1 str/sub                  { acc src head }
     swap                             { acc head src }
@@ -45,7 +46,8 @@
     str/_rev-loop
   ]
   [ { then: src empty } drop ]
-  rot if !
+  str/_rev-empty?
+  if
 ] [str/_rev-loop] @
 
 [ "" swap str/_rev-loop ] [str/reverse] @
@@ -61,7 +63,7 @@
   ]
   [ { then: done } ]
   str/_rep-n 0 <=
-  if !
+  if
 ] [str/_rep-loop] @
 
 [ { s n -- repeated }
@@ -79,13 +81,13 @@
   [str/_sw-p] @
   [str/_sw-s] @
   str/_sw-p str/len [str/_sw-plen] @
-  str/_sw-s str/len str/_sw-plen <
   [ { else: enough chars in s }
     str/_sw-s 0 str/_sw-plen str/sub
     str/_sw-p str/eq
   ]
   [ { then: s too short } false ]
-  rot if !
+  str/_sw-s str/len str/_sw-plen <
+  if
 ] [str/starts-with?] @
 
 
@@ -95,7 +97,6 @@
   [str/_ew-p] @
   [str/_ew-s] @
   str/_ew-p str/len [str/_ew-plen] @
-  str/_ew-s str/len str/_ew-plen <
   [ { else: enough chars in s }
     str/_ew-s
     str/_ew-s str/len str/_ew-plen -
@@ -104,17 +105,15 @@
     str/_ew-p str/eq
   ]
   [ { then: s too short } false ]
-  rot if !
+  str/_ew-s str/len str/_ew-plen <
+  if
 ] [str/ends-with?] @
 
 
 { ----- str/contains?: scratch-binding search loop ----- }
 
 [
-  str/_c-i str/_c-p str/len + str/_c-s str/len >
   [ { else: window in bounds }
-    str/_c-s str/_c-i str/_c-p str/len str/sub
-    str/_c-p str/eq
     [ { else: no match, advance i }
       str/_c-i 1 + [str/_c-i] @
       str/_c-loop
@@ -122,10 +121,13 @@
     [ { then: match }
       true [str/_c-result] @
     ]
-    rot if !
+    str/_c-s str/_c-i str/_c-p str/len str/sub
+    str/_c-p str/eq
+    if
   ]
   [ { then: out of bounds, done } ]
-  rot if !
+  str/_c-i str/_c-p str/len + str/_c-s str/len >
+  if
 ] [str/_c-loop] @
 
 [ { s p -- bool }
@@ -141,10 +143,7 @@
 { ----- str/index: like contains?, but records first index, else -1 ----- }
 
 [
-  str/_idx-i str/_idx-p str/len + str/_idx-s str/len >
   [ { else: window in bounds }
-    str/_idx-s str/_idx-i str/_idx-p str/len str/sub
-    str/_idx-p str/eq
     [ { else: no match, advance i }
       str/_idx-i 1 + [str/_idx-i] @
       str/_idx-loop
@@ -152,10 +151,13 @@
     [ { then: record index }
       str/_idx-i [str/_idx-result] @
     ]
-    rot if !
+    str/_idx-s str/_idx-i str/_idx-p str/len str/sub
+    str/_idx-p str/eq
+    if
   ]
   [ { then: out of bounds, done } ]
-  rot if !
+  str/_idx-i str/_idx-p str/len + str/_idx-s str/len >
+  if
 ] [str/_idx-loop] @
 
 [ { s p -- index-or-(-1) }
@@ -166,3 +168,27 @@
   str/_idx-loop
   str/_idx-result
 ] [str/index] @
+
+
+{ ----- str/strip-nl: drop single trailing newline. Safe on empty. ----- }
+
+[ { s -- s' }
+  [str/_sn-s] @
+  [
+    [ str/_sn-s ]
+    [ str/_sn-s 0 str/_sn-s str/len 1 - str/sub ]
+    str/_sn-s str/_sn-s str/len 1 - 1 str/sub `
+` str/eq
+    if
+  ]
+  [ str/_sn-s ]
+  str/_sn-s str/empty?
+  if
+] [str/strip-nl] @
+
+
+{ ----- str/->str: convert a value to its string representation.        }
+{ TODO: currently only works for values that are already strings.      }
+{ For numbers, store counters as strings and use shell expr.           }
+
+[ { v -- str } ] [str/->str] @

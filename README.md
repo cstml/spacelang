@@ -135,7 +135,7 @@ sh/|>  { "input" "cmd" → pipe input into stdin, push captured stdout }
 str/cat str/len str/sub str/ord str/chr str/eq
 ```
 
-After `"str/str.sp" :require` you also get:
+After `"str/str.sp" require` you also get:
 ```
 str/empty?  str/head  str/tail
 str/reverse str/repeat
@@ -145,13 +145,13 @@ str/contains?  str/index
 
 **Keywords:**
 ```
-:s        { print the stack }
-:bye      { exit 0 }
-:sleep    { n → sleep n milliseconds }
-:require  { "path" → load and feed file at path }
-:exists   { "name" → is there a mesh peer with that name? }
-:bus      { → push current bus dir }
-:log      { x → print to stderr }
+_s        { print the stack }
+bye!      { exit 0 }
+sleep    { n → sleep n milliseconds }
+require  { "path" → load and feed file at path }
+sp/exists?   { "name" → is there a mesh peer with that name? }
+sp/bus      { → push current bus dir }
+log      { x → print to stderr }
 ```
 
 ### Idioms
@@ -203,7 +203,7 @@ protocol details.
 ./spcc --as NAME program.sp -o NAME    # bake NAME as default --name
 ```
 
-`spcc` statically inlines `:require`d files at compile time, so the
+`spcc` statically inlines `require`d files at compile time, so the
 output binary has no runtime dependency on the `.sp` library files —
 you can delete them after building. Cycle-safe (each file is inlined
 at most once).
@@ -282,7 +282,7 @@ Test classes:
 | `TestEval`              | Language semantics + shell-out via `spci` REPL              |
 | `TestStr`               | `str/` primitives and the spaceforth library on top         |
 | `TestCompile`           | `spcc` binary matches `spci` output byte-for-byte           |
-| `TestRequirePreprocess` | `spcc` statically inlines `:require`d files                 |
+| `TestRequirePreprocess` | `spcc` statically inlines `require`d files                 |
 | `TestProperty`          | 200 random balanced programs → no segfaults                 |
 | `TestMesh`              | `spco` + `spci` nodes over real Unix sockets                |
 
@@ -327,7 +327,7 @@ t
 ## Relation to other Forths
 
 The stack-language core is conventional Forth. Quotations (`[ ... ]`) are
-the Factor/gforth-`[:...;]` idiom. The `:require`-with-static-inline trick
+the Factor/gforth-`[:...;]` idiom. The `require`-with-static-inline trick
 is closest to **lbForth** (source-to-C, single binary). `spcc`'s
 distribution model — compiler + headers + runtime archive sitting next to
 each other — is the gcc shape.

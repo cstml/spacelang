@@ -31,9 +31,10 @@ import shutil
 from pathlib import Path
 
 ROOT = Path(__file__).resolve().parent
-SPCI  = str(ROOT / "spci")
-SPCC  = str(ROOT / "spcc")
-SPCO  = str(ROOT / "spco")
+SPCI  = str(ROOT / "bin" / "spci")
+SPCC  = str(ROOT / "bin" / "spcc")
+SPCO  = str(ROOT / "bin" / "spco")
+SPCT  = str(ROOT / "bin" / "spct")
 BUS   = "/tmp/spacelang_test"
 
 # Per-test hard timeout (seconds). Any test exceeding this raises and fails.
@@ -114,7 +115,7 @@ class TestEval(TimedTestCase):
     """Language semantics — run via spci REPL and check output."""
 
     def eval(self, code):
-        out, err, rc = run_spci(stdin=code + "\n:bye\n")
+        out, err, rc = run_spci(stdin=code + "\nbye!\n")
         self.assertEqual(rc, 0, f"spci crashed:\n{err}")
         return out
 
@@ -142,7 +143,7 @@ class TestEval(TimedTestCase):
         out = self.eval("2 2 = .")
         self.assertIn("t", out)
         out = self.eval("3 2 = .")
-        self.assertIn("0", out)  # false → 0, not nil
+        self.assertIn("nil", out)  # false → nil
 
     def test_stack_ops(self):
         out = self.eval("1 2 swap . .")
@@ -154,12 +155,21 @@ class TestEval(TimedTestCase):
         self.assertNotIn("99", out)
 
     def test_if(self):
-        # if { else then cond → (cond ? then : else) }
-        # [else] [then] cond if  →  pushes then if cond truthy
-        out = self.eval("[else] [then] true if .")
-        self.assertIn("[then]", out)
-        out = self.eval("[else] [then] false if .")
-        self.assertIn("[else]", out)
+        # if: [else] [then] cond if  →  eagerly runs the selected thunk
+        out = self.eval("[99] [42] true if .")
+        self.assertIn("42", out)
+        out = self.eval("[99] [42] false if .")
+        self.assertIn("99", out)
+        out = self.eval("[99] [42] nil if .")
+        self.assertIn("99", out)
+        out = self.eval("[99] [42] 32 if .")
+        self.assertIn("42", out)
+        out = self.eval("[99] [42] 'asd' if .")
+        self.assertIn("42", out)
+        out = self.eval("[99] [42] '' if .")
+        self.assertIn("99", out)
+        out = self.eval("[99] [42] [] if .")
+        self.assertIn("99", out)
 
     def test_bind_and_eval(self):
         out = self.eval("[ 2 * ] [double] @  21 double ! .")
@@ -168,6 +178,31 @@ class TestEval(TimedTestCase):
     def test_nested_thunks(self):
         out = self.eval("[ 1 2 + ] ! .")
         self.assertIn("3", out)
+
+    def test_cmp_cross_type(self):
+        """Ordering operators are total across all Value types:
+        number < bool/word < thunk < string."""
+        # within-type
+        out = self.eval('"a" "b" < .');     self.assertIn("t", out)
+        out = self.eval('"b" "a" < .');     self.assertIn("nil", out)
+        out = self.eval('"abc" "abd" < .'); self.assertIn("t", out)
+        out = self.eval('"a" "a" <= .');    self.assertIn("t", out)
+        out = self.eval('"b" "a" >= .');    self.assertIn("t", out)
+        # atoms (bool sub-ordered alphabetically with word)
+        out = self.eval('false true < .');  self.assertIn("t", out)
+        # cross-type rank ordering
+        out = self.eval('0 false < .');     self.assertIn("t", out)   # number < bool
+        out = self.eval('true [x] < .');    self.assertIn("t", out)   # bool < thunk
+        out = self.eval('[x] "x" < .');     self.assertIn("t", out)   # thunk < string
+        out = self.eval('1 "a" < .');       self.assertIn("t", out)   # number < string (transitive)
+
+    def test_eq_cross_type(self):
+        """`=` is structural across types; mismatched types yield nil."""
+        out = self.eval('1 1 = .');                       self.assertIn("t", out)
+        out = self.eval('"a" "a" = .');                   self.assertIn("t", out)
+        out = self.eval('[1 2 +] [1 2 +] = .');           self.assertIn("t", out)
+        out = self.eval('1 "1" = .');                     self.assertIn("nil", out)
+        out = self.eval('[1] [2] = .');                   self.assertIn("nil", out)
 
     def test_strings(self):
         out = self.eval('"hello" .')
@@ -182,7 +217,7 @@ class TestEval(TimedTestCase):
         self.assertIn("+", out)
 
     def test_stack_print(self):
-        out = self.eval("1 2 3 :s")
+        out = self.eval("1 2 3 _s")
         self.assertIn("-- stack (3) --", out)
         self.assertIn("1", out)
         self.assertIn("2", out)
@@ -207,7 +242,7 @@ class TestEval(TimedTestCase):
 
     def test_sleep(self):
         t0 = time.time()
-        self.eval("200 :sleep")
+        self.eval("200 sleep")
         self.assertGreaterEqual(time.time() - t0, 0.18)
 
     def test_sh(self):
@@ -292,25 +327,25 @@ class TestEval(TimedTestCase):
             f.write("[ 7 ] [seven] @\n")
             lib = f.name
         try:
-            out = self.eval(f'"{lib}" :require seven ! .')
+            out = self.eval(f'"{lib}" require seven ! .')
             self.assertIn("7", out)
         finally:
             os.unlink(lib)
 
     def test_exists_false(self):
-        # Without --name/--bus, bus_dir is NULL → :exists is always false
-        out = self.eval('"NoSuchPeer" :exists .')
-        self.assertIn("0", out)
+        # Without --name/--bus, bus_dir is NULL → sp/exists? is always false
+        out = self.eval('"NoSuchPeer" sp/exists? .')
+        self.assertIn("nil", out)
 
     def test_name_str_roundtrip(self):
-        # name>str pulls the name out of a [X] form
-        out = self.eval('[foo] name>str .')
+        # wo/name>str pulls the name out of a [X] form
+        out = self.eval('[foo] wo/name>str .')
         self.assertIn('"foo"', out)
-        # str>name wraps a string into a [X] form
-        out = self.eval('"bar" str>name .')
+        # wo/str>name wraps a string into a [X] form
+        out = self.eval('"bar" wo/str>name .')
         self.assertIn('[bar]', out)
         # round-trip preserves the name
-        out = self.eval('[baz] name>str str>name name>str .')
+        out = self.eval('[baz] wo/name>str wo/str>name wo/name>str .')
         self.assertIn('"baz"', out)
 
     def test_namespaced_word(self):
@@ -330,6 +365,27 @@ class TestEval(TimedTestCase):
         self.assertIn("7", out)
         out = self.eval("1 { ignored } 2 + .")
         self.assertIn("3", out)
+
+    def test_multiline_comment(self):
+        out = self.eval("{ line one\nline two\nline three } 1 2 + .")
+        self.assertIn("3", out)
+        out = self.eval("{\n}\n9 .")
+        self.assertIn("9", out)
+
+    def test_require_via_override(self):
+        """deps.sp override rewrites logical URLs to local paths."""
+        tmp = tempfile.mkdtemp(prefix="spc-ovr-")
+        try:
+            (Path(tmp) / "deps.sp").write_text(
+                '"." "github.com/test/proj" deps/override\n')
+            (Path(tmp) / "lib.sp").write_text('"<from-override>" .\n')
+            (Path(tmp) / "main.sp").write_text(
+                '"github.com/test/proj/lib.sp" require\n')
+            out, err, rc = run_spci(args=[str(Path(tmp) / "main.sp")], timeout=3)
+            self.assertEqual(rc, 0, f"spci failed:\n{err}")
+            self.assertIn("<from-override>", out)
+        finally:
+            shutil.rmtree(tmp, ignore_errors=True)
 
 
 # ── compile tests: spcc produces correct binaries ─────────────────────
@@ -370,7 +426,8 @@ class TestCompile(TimedTestCase):
         self.compile_and_compare("[ 2 * ] [double] @  21 double ! .", "")
 
     def test_if(self):
-        self.compile_and_compare("[yes] [no] true if .", "")
+        self.compile_and_compare("[99] [42] true if .", "")
+        self.compile_and_compare("[99] [42] false if .", "")
 
     def test_example_add2(self):
         # add_2.sp is interactive (slurp slurp +) — requires stdin typing.
@@ -400,13 +457,13 @@ class TestStr(TimedTestCase):
     """str/ C primitives and the spacelang library on top."""
 
     def eval(self, code, preamble=""):
-        full = preamble + code + "\n:bye\n"
+        full = preamble + code + "\nbye!\n"
         out, err, rc = run_spci(stdin=full)
         self.assertEqual(rc, 0, f"spci crashed:\n{err}")
         return out
 
     def lib_eval(self, code):
-        return self.eval(code, preamble=f'"{ROOT}/str/str.sp" :require\n')
+        return self.eval(code, preamble=f'"{ROOT}/stdlib/str.sp" require\n')
 
     # ----- C primitives -----
 
@@ -447,16 +504,16 @@ class TestStr(TimedTestCase):
         out = self.eval('"foo" "foo" str/eq .')
         self.assertIn("t", out)
         out = self.eval('"foo" "bar" str/eq .')
-        # false prints as 0
-        self.assertIn("0", out)
+        # false prints as nil
+        self.assertIn("nil", out)
 
     # ----- library on top -----
 
     def test_empty(self):
         out = self.lib_eval('"" str/empty? . "x" str/empty? .')
-        # both results in stack order: t then 0
+        # both results in stack order: t then nil
         self.assertIn("t", out)
-        self.assertIn("0", out)
+        self.assertIn("nil", out)
 
     def test_head_tail(self):
         out = self.lib_eval('"hello" str/head .')
@@ -487,10 +544,10 @@ class TestStr(TimedTestCase):
         out = self.lib_eval('"hello" "hel" str/starts-with? .')
         self.assertIn("t", out)
         out = self.lib_eval('"hello" "ell" str/starts-with? .')
-        self.assertIn("0", out)
+        self.assertIn("nil", out)
         # prefix longer than s
         out = self.lib_eval('"hi" "hello" str/starts-with? .')
-        self.assertIn("0", out)
+        self.assertIn("nil", out)
         # empty prefix always matches
         out = self.lib_eval('"hello" "" str/starts-with? .')
         self.assertIn("t", out)
@@ -499,9 +556,9 @@ class TestStr(TimedTestCase):
         out = self.lib_eval('"hello" "llo" str/ends-with? .')
         self.assertIn("t", out)
         out = self.lib_eval('"hello" "hel" str/ends-with? .')
-        self.assertIn("0", out)
+        self.assertIn("nil", out)
         out = self.lib_eval('"hi" "hello" str/ends-with? .')
-        self.assertIn("0", out)
+        self.assertIn("nil", out)
         out = self.lib_eval('"hello" "" str/ends-with? .')
         self.assertIn("t", out)
 
@@ -509,7 +566,7 @@ class TestStr(TimedTestCase):
         out = self.lib_eval('"hello world" "world" str/contains? .')
         self.assertIn("t", out)
         out = self.lib_eval('"hello" "xyz" str/contains? .')
-        self.assertIn("0", out)
+        self.assertIn("nil", out)
         # match at start
         out = self.lib_eval('"hello" "hel" str/contains? .')
         self.assertIn("t", out)
@@ -546,10 +603,10 @@ class TestStr(TimedTestCase):
         self.assertIn("2", out)
 
 
-# ── :require preprocessor (spcc inlines required files) ──────────────
+# ── require preprocessor (spcc inlines required files) ──────────────
 
 class TestRequirePreprocess(TimedTestCase):
-    """spcc statically inlines `"path" :require` so compiled binaries
+    """spcc statically inlines `"path" require` so compiled binaries
     are self-contained. Errors out (with file:line) on non-string
     operand or missing file."""
 
@@ -565,10 +622,10 @@ class TestRequirePreprocess(TimedTestCase):
         return p
 
     def test_inlines_library(self):
-        """`:require`d file is embedded — after compile, deleting the .sp
+        """`require`d file is embedded — after compile, deleting the .sp
         sources (and moving the binary elsewhere) must not break the run."""
         lib  = self.write("lib.sp", "[ 7 ] [seven] @\n")
-        main = self.write("main.sp", '"lib.sp" :require seven .\n')
+        main = self.write("main.sp", '"lib.sp" require seven .\n')
         bin_path = str(Path(self.tmp) / "out")
         r = spcc_compile(main, bin_path)
         self.assertEqual(r.returncode, 0, r.stderr)
@@ -593,8 +650,8 @@ class TestRequirePreprocess(TimedTestCase):
         """End-to-end self-containment: write sources, compile, delete the
         ENTIRE source tree, then the binary must still run correctly."""
         self.write("greet.sp", '[ "hi-from-lib" . ] [greet] @\n')
-        self.write("util.sp",  '"greet.sp" :require [ 21 21 + . ] [answer] @\n')
-        main = self.write("main.sp", '"util.sp" :require greet answer\n')
+        self.write("util.sp",  '"greet.sp" require [ 21 21 + . ] [answer] @\n')
+        main = self.write("main.sp", '"util.sp" require greet answer\n')
         bin_path = str(Path(self.tmp) / "out")
 
         r = spcc_compile(main, bin_path)
@@ -619,10 +676,10 @@ class TestRequirePreprocess(TimedTestCase):
             os.makedirs(self.tmp, exist_ok=True)
 
     def test_recursive_require(self):
-        """A required file may itself :require another."""
+        """A required file may itself require another."""
         self.write("a.sp", "[ 1 ] [one] @\n")
-        self.write("b.sp", '"a.sp" :require [ one 1 + ] [two] @\n')
-        main = self.write("main.sp", '"b.sp" :require two .\n')
+        self.write("b.sp", '"a.sp" require [ one 1 + ] [two] @\n')
+        main = self.write("main.sp", '"b.sp" require two .\n')
         bin_path = str(Path(self.tmp) / "out")
         r = spcc_compile(main, bin_path)
         self.assertEqual(r.returncode, 0, r.stderr)
@@ -631,9 +688,9 @@ class TestRequirePreprocess(TimedTestCase):
 
     def test_cycle_safe(self):
         """Mutual requires don't infinite-loop; each file loaded once."""
-        self.write("a.sp", '"b.sp" :require [ 1 ] [a-marker] @\n')
-        self.write("b.sp", '"a.sp" :require [ 2 ] [b-marker] @\n')
-        main = self.write("main.sp", '"a.sp" :require a-marker . b-marker .\n')
+        self.write("a.sp", '"b.sp" require [ 1 ] [a-marker] @\n')
+        self.write("b.sp", '"a.sp" require [ 2 ] [b-marker] @\n')
+        main = self.write("main.sp", '"a.sp" require a-marker . b-marker .\n')
         bin_path = str(Path(self.tmp) / "out")
         r = spcc_compile(main, bin_path)
         self.assertEqual(r.returncode, 0, r.stderr)
@@ -642,31 +699,274 @@ class TestRequirePreprocess(TimedTestCase):
         self.assertIn("2", p.stdout)
 
     def test_error_non_string_operand(self):
-        """:require with a non-string operand is rejected at compile time
+        """require with a non-string operand is rejected at compile time
         with file:line context."""
         main = self.write("main.sp",
             "{ comment }\n"
-            "1 2 + :require\n")        # line 2 has the bad :require
+            "1 2 + require\n")        # line 2 has the bad require
         bin_path = str(Path(self.tmp) / "out")
         r = spcc_compile(main, bin_path)
         self.assertNotEqual(r.returncode, 0)
-        self.assertIn(":require", r.stderr)
+        self.assertIn("require", r.stderr)
         self.assertIn("string literal", r.stderr)
         self.assertIn(f"{main}:2", r.stderr)
 
     def test_error_missing_file(self):
-        """Missing :require target is rejected at compile time with
+        """Missing require target is rejected at compile time with
         the file:line of the offending string literal."""
         main = self.write("main.sp",
             "{ a header }\n"
             "{ another }\n"
-            '"nope-does-not-exist.sp" :require\n')   # line 3
+            '"nope-does-not-exist.sp" require\n')   # line 3
         bin_path = str(Path(self.tmp) / "out")
         r = spcc_compile(main, bin_path)
         self.assertNotEqual(r.returncode, 0)
-        self.assertIn(":require", r.stderr)
+        self.assertIn("require", r.stderr)
         self.assertIn("nope-does-not-exist.sp", r.stderr)
         self.assertIn(f"{main}:3", r.stderr)
+
+
+# ── spct / test.sp: the test-runner binary and stdlib ─────────────────
+
+class TestSpct(TimedTestCase):
+    """spct binary and test.sp stdlib integration tests."""
+
+    @classmethod
+    def setUpClass(cls):
+        if not os.path.exists(SPCT):
+            raise unittest.SkipTest("spct binary missing; run `make spct`")
+
+    def spct(self, *test_files, timeout=4):
+        """Run spct with given test files, return (stdout, stderr, rc)."""
+        p = subprocess.run(
+            [SPCT] + list(test_files),
+            capture_output=True, text=True, timeout=timeout
+        )
+        return p.stdout, p.stderr, p.returncode
+
+    def spci_stdin(self, code, timeout=4):
+        """Run spci REPL with stdin code, return combined output."""
+        out, err, rc = run_spci(stdin=code + "\nbye!\n", timeout=timeout)
+        self.assertEqual(rc, 0, f"spci crashed:\n{err}")
+        return out + err
+
+    def setUp(self):
+        self.tmp = tempfile.mkdtemp(prefix="spct-")
+
+    def tearDown(self):
+        shutil.rmtree(self.tmp, ignore_errors=True)
+
+    def write_sp(self, name, text):
+        p = Path(self.tmp) / name
+        p.write_text(text)
+        return str(p)
+
+    # ── spct binary ──
+
+    def test_spct_no_args(self):
+        """spct with no arguments prints usage."""
+        _, stderr, rc = self.spct()
+        self.assertIn("Usage", stderr)
+
+    def test_spct_simple_pass(self):
+        """spct runs a simple passing test suite."""
+        f = self.write_sp("t.sp", """
+test/reset
+"hello" test/heading
+1 2 + 3 "1+2=3" test/eq
+test/summary
+""")
+        _, stderr, rc = self.spct(f)
+        self.assertIn("PASS 1+2=3", stderr)
+        self.assertIn("ALL PASSED", stderr)
+        self.assertNotIn("FAIL", stderr)
+
+    def test_spct_with_failures(self):
+        """spct reports failures correctly."""
+        f = self.write_sp("t.sp", """
+test/reset
+2 2 + 5 "2+2=5" test/eq
+test/summary
+""")
+        _, stderr, rc = self.spct(f)
+        self.assertIn("FAIL 2+2=5", stderr)
+        self.assertIn("FAIL: 1", stderr)
+
+    def test_spct_multiple_sections(self):
+        """spct handles multiple test/heading sections."""
+        f = self.write_sp("t.sp", """
+test/reset
+"section a" test/heading
+true "a1" test/assert
+"section b" test/heading
+false "b1" test/assert
+test/summary
+""")
+        _, stderr, rc = self.spct(f)
+        self.assertIn("--- section a ---", stderr)
+        self.assertIn("--- section b ---", stderr)
+        self.assertIn("PASS a1", stderr)
+        self.assertIn("FAIL b1", stderr)
+        self.assertIn("FAIL: 1", stderr)
+
+    def test_example_tests_sp(self):
+        """example/tests_test.sp runs end-to-end through spct."""
+        _, stderr, rc = self.spct(str(ROOT / "example/tests_test.sp"))
+        self.assertIn("PASS 1+2=3", stderr)
+        self.assertIn("PASS 5*2=10", stderr)
+        self.assertIn("PASS 3*4!=13", stderr)
+        self.assertIn("PASS true passes", stderr)
+        self.assertIn("FAIL false fails", stderr)  # deliberate
+        self.assertIn("PASS 4>2", stderr)
+        self.assertIn("PASS nil", stderr)
+        self.assertIn("PASS concat", stderr)
+        self.assertIn("PASS: 7", stderr)
+        self.assertIn("FAIL: 1", stderr)
+
+    def test_spct_dir_discovery(self):
+        """spct <dir> finds and runs all *_test.sp files under it (like `go test`)."""
+        a = self.write_sp("a_test.sp", """
+test/reset
+"alpha" test/heading
+1 1 + 2 "a-eq" test/eq
+test/summary
+""")
+        # nested dir to verify recursion
+        sub = Path(self.tmp) / "nested"
+        sub.mkdir()
+        b = sub / "b_test.sp"
+        b.write_text("""
+test/reset
+"beta" test/heading
+true "b-ok" test/assert
+test/summary
+""")
+        # a non-test file should be ignored
+        Path(self.tmp, "ignored.sp").write_text('"nope" .\n')
+
+        _, stderr, _ = self.spct(self.tmp)
+        self.assertIn("PASS a-eq", stderr)
+        self.assertIn("PASS b-ok", stderr)
+        self.assertNotIn("nope", stderr)
+
+    def test_spct_dot(self):
+        """spct . discovers *_test.sp under the current directory."""
+        self.write_sp("c_test.sp", """
+test/reset
+"gamma" test/heading
+3 3 "c-eq" test/eq
+test/summary
+""")
+        cwd = os.getcwd()
+        try:
+            os.chdir(self.tmp)
+            _, stderr, _ = self.spct(".")
+        finally:
+            os.chdir(cwd)
+        self.assertIn("PASS c-eq", stderr)
+        self.assertIn("ALL PASSED", stderr)
+
+    def test_example_cmp_test_sp(self):
+        """example/cmp_test.sp covers the total ordering across all Value types."""
+        _, stderr, _ = self.spct(str(ROOT / "example/cmp_test.sp"))
+        self.assertIn("ALL PASSED (21)", stderr)
+
+    def test_math_library_example(self):
+        """../sp-math/example/math_test.sp runs all 53 math assertions."""
+        math_tests = ROOT.parent / "sp-math" / "example" / "math_test.sp"
+        if not math_tests.exists():
+            self.skipTest("sp-math repo not found alongside spacelang")
+        cwd = os.getcwd()
+        try:
+            os.chdir(str(math_tests.parent.parent))
+            _, stderr, rc = self.spct("example/math_test.sp")
+        finally:
+            os.chdir(cwd)
+        self.assertIn("ALL PASSED (53)", stderr)
+
+    # ── test.sp words via spci REPL ──
+
+    def lib_eval(self, code):
+        """Run code with test.sp stdlib preloaded."""
+        pre = f'"{ROOT}/stdlib/str.sp" require "{ROOT}/stdlib/test.sp" require\n'
+        return self.spci_stdin(pre + code)
+
+    def test_reset_zeros_counters(self):
+        out = self.lib_eval("test/reset test/_pass . test/_fail .")
+        self.assertIn("0", out)
+
+    def test_heading_output(self):
+        out = self.lib_eval('"my suite" test/heading')
+        self.assertIn("--- my suite ---", out)
+
+    def test_assert_pass(self):
+        out = self.lib_eval('test/reset true "t1" test/assert')
+        self.assertIn("PASS t1", out)
+
+    def test_assert_fail(self):
+        out = self.lib_eval('test/reset false "f1" test/assert')
+        self.assertIn("FAIL f1", out)
+
+    def test_eq_pass(self):
+        out = self.lib_eval('test/reset 1 2 + 3 "add" test/eq')
+        self.assertIn("PASS add", out)
+
+    def test_eq_fail(self):
+        out = self.lib_eval('test/reset 2 2 + 5 "bad" test/eq')
+        self.assertIn("FAIL bad", out)
+
+    def test_neq_pass(self):
+        out = self.lib_eval('test/reset 3 4 "neq" test/neq')
+        self.assertIn("PASS neq", out)
+
+    def test_neq_fail(self):
+        out = self.lib_eval('test/reset 5 5 "same" test/neq')
+        self.assertIn("FAIL same", out)
+
+    def test_true_assert(self):
+        out = self.lib_eval('test/reset 42 0 > "pos" test/true?')
+        self.assertIn("PASS pos", out)
+
+    def test_false_assert(self):
+        out = self.lib_eval('test/reset 0 "zero" test/false?')
+        self.assertIn("PASS zero", out)
+
+    def test_str_eq(self):
+        out = self.lib_eval('test/reset "hi" "hi" "greet" test/str-eq')
+        self.assertIn("PASS greet", out)
+
+    def test_str_eq_fail(self):
+        out = self.lib_eval('test/reset "hi" "yo" "mismatch" test/str-eq')
+        self.assertIn("FAIL mismatch", out)
+
+    def test_summary_all_pass(self):
+        out = self.lib_eval('test/reset true "a" test/assert true "b" test/assert test/summary')
+        self.assertIn("ALL PASSED", out)
+
+    def test_summary_with_failures(self):
+        out = self.lib_eval('test/reset true "a" test/assert false "b" test/assert test/summary')
+        self.assertIn("PASS: 1", out)
+        self.assertIn("FAIL: 1", out)
+
+    def test_summary_no_tests(self):
+        out = self.lib_eval('test/reset test/summary')
+        self.assertIn("no tests run", out)
+
+    def test_counter_increments(self):
+        """Verify pass/fail counters increment correctly (string-based)."""
+        out = self.lib_eval('test/reset true "a" test/assert test/_pass str/len .')
+        # Pass counter is "1" (string length 1) or more if other tests ran
+        self.assertIn("1", out)
+
+    # ── str/->str ──
+
+    def test_str_to_str_identity(self):
+        """str/->str is identity for string values."""
+        out = self.spci_stdin(
+            f'"{ROOT}/stdlib/str.sp" require\n'
+            '"hello" str/->str .\n'
+        )
+        self.assertIn('"hello"', out)
 
 
 # ── property tests: random term sequences ─────────────────────────────
@@ -680,7 +980,7 @@ TERMS = [
     "dup", "swap", "drop",
     ".",
     "[ 1 ]", "[ 1 2 + ]", "[ dup + ]",
-    ":s",
+    "_s",
 ]
 
 class TestProperty(TimedTestCase):
@@ -706,7 +1006,7 @@ class TestProperty(TimedTestCase):
                 seq.append(rng.choice(PUSHERS))
                 seq.append(rng.choice(PUSHERS))
                 seq.append(rng.choice(OPS))
-            code = " ".join(seq) + " :bye"
+            code = " ".join(seq) + " bye!"
             out, err, rc = run_spci(stdin=code, timeout=4)
             if rc != 0 and "stack underflow" not in err and "expected number" not in err:
                 failures.append((seq, err))
@@ -716,6 +1016,221 @@ class TestProperty(TimedTestCase):
             for seq, err in failures[:5]:
                 msg += f"  {' '.join(seq)}\n  → {err.strip()}\n"
             self.fail(msg)
+
+
+# ── spcd integration: package manager verbs against local bare repos ──
+
+SPCD   = str(ROOT / "bin" / "spcd")
+FIXDIR = Path("/tmp/spacelang_git_test")
+
+
+class TestSpcd(unittest.TestCase):
+    """Integration tests for the compiled spcd binary.
+
+    Uses local bare git repos under /tmp/spacelang_git_test (no network).
+    test-repo.git is bootstrapped by test_git.sp and reused; dep-a, dep-b,
+    and binrepo are created on demand for transitive-dep and install
+    coverage. Each test runs in a fresh sandbox.
+    """
+
+    TIMEOUT = 5
+
+    @classmethod
+    def setUpClass(cls):
+        if not os.path.exists(SPCD):
+            raise unittest.SkipTest("spcd binary missing; run `make spcd` or "
+                                    "`./bin/spcc --as spcd spcd/spcd.sp -o bin/spcd`")
+        if not (FIXDIR / "test-repo.git").is_dir():
+            raise unittest.SkipTest(
+                f"{FIXDIR}/test-repo.git missing; run `spci test_git.sp` first")
+        cls._make_fixture_dep_a()
+        cls._make_fixture_dep_b()
+        cls._make_fixture_dotty()
+        cls._make_fixture_binrepo()
+
+    @staticmethod
+    def _git_init_and_bare(seed, bare):
+        subprocess.run(["git", "init", "-q", "-b", "master", str(seed)], check=True)
+        env = {**os.environ,
+               "GIT_AUTHOR_NAME": "t", "GIT_AUTHOR_EMAIL": "t@t",
+               "GIT_COMMITTER_NAME": "t", "GIT_COMMITTER_EMAIL": "t@t"}
+        subprocess.run(["git", "-C", str(seed), "add", "."], check=True)
+        subprocess.run(["git", "-C", str(seed), "commit", "-q", "-m", "seed"],
+                       check=True, env=env)
+        subprocess.run(["git", "clone", "-q", "--bare", str(seed), str(bare)],
+                       check=True)
+
+    @classmethod
+    def _make_fixture_dep_a(cls):
+        bare = FIXDIR / "dep-a.git"
+        if bare.is_dir(): return
+        seed = FIXDIR / "_seed-a"
+        shutil.rmtree(seed, ignore_errors=True)
+        seed.mkdir(parents=True)
+        (seed / "lib.sp").write_text("{ dep-a stub }\n")
+        cls._git_init_and_bare(seed, bare)
+        shutil.rmtree(seed, ignore_errors=True)
+
+    @classmethod
+    def _make_fixture_dep_b(cls):
+        bare = FIXDIR / "dep-b.git"
+        if bare.is_dir(): return
+        seed = FIXDIR / "_seed-b"
+        shutil.rmtree(seed, ignore_errors=True)
+        seed.mkdir(parents=True)
+        (seed / "lib.sp").write_text("{ dep-b stub }\n")
+        (seed / "deps.sp").write_text(f'"{FIXDIR}/dep-a.git" deps/head\n')
+        cls._git_init_and_bare(seed, bare)
+        shutil.rmtree(seed, ignore_errors=True)
+
+    @classmethod
+    def _make_fixture_dotty(cls):
+        """Bare repo whose path contains dots — exercises the lock.sp
+        round-trip, since unquoted URLs with '.' get split by the parser."""
+        bare = FIXDIR / "site.example.com.git"
+        if bare.is_dir(): return
+        seed = FIXDIR / "_seed-dotty"
+        shutil.rmtree(seed, ignore_errors=True)
+        seed.mkdir(parents=True)
+        (seed / "lib.sp").write_text("{ dotty stub }\n")
+        cls._git_init_and_bare(seed, bare)
+        shutil.rmtree(seed, ignore_errors=True)
+
+    @classmethod
+    def _make_fixture_binrepo(cls):
+        bare = FIXDIR / "binrepo.git"
+        if bare.is_dir(): return
+        seed = FIXDIR / "_seed-bin"
+        shutil.rmtree(seed, ignore_errors=True)
+        seed.mkdir(parents=True)
+        (seed / "main.sp").write_text('`hello from binrepo` log\n')
+        cls._git_init_and_bare(seed, bare)
+        shutil.rmtree(seed, ignore_errors=True)
+
+    def setUp(self):
+        self.tmp = tempfile.mkdtemp(prefix="spcd-")
+        self._cwd = os.getcwd()
+        os.chdir(self.tmp)
+
+    def tearDown(self):
+        os.chdir(self._cwd)
+        shutil.rmtree(self.tmp, ignore_errors=True)
+
+    def spcd(self, *args, env=None, check=False):
+        full_env = {**os.environ, **(env or {})}
+        return subprocess.run(
+            [SPCD, *args], capture_output=True, text=True,
+            timeout=self.TIMEOUT, env=full_env, check=check)
+
+    # -- T1
+    def test_add_head(self):
+        self.spcd("add", str(FIXDIR / "test-repo.git"))
+        self.assertTrue(Path("deps.sp").is_file())
+        self.assertIn("deps/head", Path("deps.sp").read_text())
+        self.assertTrue(Path("spcd_lib/test-repo").is_dir())
+        self.assertIn("0c7e6d3d9794a92ede8dfa53040de810dd3f6e7a",
+                      Path("lock.sp").read_text())
+
+    # -- T2
+    def test_list_prints_lock(self):
+        self.spcd("add", str(FIXDIR / "test-repo.git"))
+        r = self.spcd("list")
+        self.assertIn("0c7e6d3d9794a92ede8dfa53040de810dd3f6e7a", r.stdout + r.stderr)
+
+    # -- T3
+    def test_fetch_is_idempotent(self):
+        self.spcd("add", str(FIXDIR / "test-repo.git"))
+        before = Path("lock.sp").read_text()
+        self.spcd("fetch")
+        self.assertEqual(before, Path("lock.sp").read_text())
+
+    # -- T3c: live regression against github.com/cstml/spacelang.
+    # Skipped offline or when the host is unreachable.
+    def test_fetch_idempotent_github(self):
+        try:
+            socket.create_connection(("github.com", 443), timeout=2).close()
+        except OSError:
+            raise unittest.SkipTest("no network to github.com")
+        url = "github.com/cstml/spacelang"
+        r = self.spcd("add", url)
+        if r.returncode != 0:
+            raise unittest.SkipTest(f"spcd add failed (likely network): {r.stderr}")
+        second = subprocess.run([SPCD, "fetch"], capture_output=True,
+                                text=True, timeout=30)
+        self.assertEqual(second.returncode, 0)
+        self.assertNotIn("stack underflow", second.stdout + second.stderr)
+        self.assertNotIn("parser:",         second.stdout + second.stderr)
+        self.assertIn("up to date",         second.stdout + second.stderr)
+        self.assertIn(url, Path("lock.sp").read_text())
+
+    # -- T3b: regression — URLs with '.' must round-trip through lock.sp
+    def test_fetch_idempotent_dotted_url(self):
+        url = str(FIXDIR / "site.example.com.git")
+        self.spcd("add", url)
+        first = self.spcd("fetch")
+        self.assertEqual(first.returncode, 0)
+        self.assertNotIn("stack underflow", first.stdout + first.stderr)
+        self.assertNotIn("parser:",         first.stdout + first.stderr)
+        # Second fetch eval'd lock.sp — must not choke on the dotted URL.
+        second = self.spcd("fetch")
+        self.assertEqual(second.returncode, 0)
+        self.assertNotIn("stack underflow", second.stdout + second.stderr)
+        self.assertNotIn("parser:",         second.stdout + second.stderr)
+        self.assertIn("up to date",         second.stdout + second.stderr)
+        self.assertIn(url, Path("lock.sp").read_text())
+
+    # -- T4
+    def test_clean(self):
+        self.spcd("add", str(FIXDIR / "test-repo.git"))
+        self.assertTrue(Path("spcd_lib").is_dir())
+        self.spcd("clean")
+        self.assertFalse(Path("spcd_lib").exists())
+
+    # -- T5
+    def test_add_branch_heuristic(self):
+        self.spcd("add", f"{FIXDIR}/test-repo.git@feature")
+        self.assertIn("deps/branch", Path("deps.sp").read_text())
+        self.assertIn("54c049cc2f66285604f32e8f75ec744f777465b0",
+                      Path("lock.sp").read_text())
+
+    # -- T6
+    def test_add_sha_heuristic(self):
+        sha = "0c7e6d3d9794a92ede8dfa53040de810dd3f6e7a"
+        self.spcd("add", f"{FIXDIR}/test-repo.git@{sha}")
+        self.assertIn("deps/sha", Path("deps.sp").read_text())
+        self.assertIn(sha, Path("lock.sp").read_text())
+
+    # -- T7
+    def test_transitive_deps(self):
+        self.spcd("add", str(FIXDIR / "dep-b.git"))
+        self.assertTrue(Path("spcd_lib/dep-b").is_dir(), "dep-b not cloned")
+        self.assertTrue(Path("spcd_lib/dep-a").is_dir(), "dep-a not cloned transitively")
+        lock = Path("lock.sp").read_text()
+        self.assertIn("dep-b.git", lock)
+        self.assertIn("dep-a.git", lock)
+
+    # -- T8
+    def test_update_rewrites_lock(self):
+        self.spcd("add", str(FIXDIR / "test-repo.git"))
+        Path("lock.sp").write_text("/tmp/fake fakesha\n")
+        self.spcd("update")
+        self.assertIn("0c7e6d3d9794a92ede8dfa53040de810dd3f6e7a",
+                      Path("lock.sp").read_text())
+
+    # -- T9
+    def test_install_builds_and_runs(self):
+        bindir = Path(self.tmp) / "bin"
+        env = {
+            "SPACELANG_BIN":  str(bindir),
+            "SPACELANG_ROOT": str(ROOT),
+            "PATH":           f"{ROOT}/bin:{os.environ.get('PATH', '')}",
+        }
+        self.spcd("install", str(FIXDIR / "binrepo.git"), env=env)
+        binary = bindir / "binrepo"
+        self.assertTrue(binary.is_file() and os.access(binary, os.X_OK),
+                        "installed binary missing or not executable")
+        r = subprocess.run([str(binary)], capture_output=True, text=True, timeout=4)
+        self.assertIn("hello from binrepo", r.stdout + r.stderr)
 
 
 # ── mesh tests: spco + spci nodes over Unix sockets ──────────────────
@@ -740,9 +1255,10 @@ class TestMesh(TimedTestCase):
 
     def start_spco(self):
         """Start spco (compiled from spco.sp). Serves on $BUS/spco.sock."""
+        env = {**os.environ, "PATH": f"{ROOT}/bin:{os.environ.get('PATH', '')}"}
         self.spco_proc = subprocess.Popen(
             [SPCO, "--bus", BUS, "--serve"],
-            stderr=subprocess.PIPE, text=True
+            stderr=subprocess.PIPE, text=True, env=env
         )
         deadline = time.time() + 3
         while time.time() < deadline:
@@ -780,12 +1296,12 @@ class TestMesh(TimedTestCase):
         # Driver sends `"X" spawn-node !` to spco via $!
         # spco receives EVAL, feeds payload, spawn-node forks an spci.
         out, err, rc = run_spci(
-            stdin='[ "X" spawn-node ! ] "spco" $!  500 :sleep  :bye\n',
+            stdin='[ "X" spawn-node ! ] "spco" $!  500 sleep  bye!\n',
             args=["--name", "DRV", "--bus", BUS],
             timeout=4,
         )
         self.assertEqual(rc, 0, f"spci failed:\n{err}")
-        # Give spawn-node's sh/! + :sleep time to bind X.
+        # Give spawn-node's sh/! + sleep time to bind X.
         for _ in range(20):
             if os.path.exists(f"{BUS}/X.sock"):
                 break
@@ -799,7 +1315,7 @@ class TestMesh(TimedTestCase):
         """Peer connects directly (socket exists, no spco needed)."""
         self.start_worker("W")
         out, err, rc = run_spci(
-            stdin="42 [W] 2000 $? . :bye\n",
+            stdin="42 [W] 2000 $? . bye!\n",
             args=["--name", "A", "--bus", BUS],
             timeout=4
         )
@@ -811,7 +1327,7 @@ class TestMesh(TimedTestCase):
         self.start_worker("W")
         self.start_spco()
         out, err, rc = run_spci(
-            stdin="42 [W] 2000 $? . :bye\n",
+            stdin="42 [W] 2000 $? . bye!\n",
             args=["--name", "A", "--bus", BUS],
             timeout=4
         )
@@ -826,10 +1342,10 @@ class TestMesh(TimedTestCase):
         # first call: spawn Z
         p1 = Path(d) / "first.sp"
         p1.write_text(
-            f'"{ROOT}/with-spco.sp" :require\n'
+            f'"{ROOT}/stdlib/with-spco.sp" require\n'
             '"one" [Z] spco/$\n'
         )
-        _, err, rc = run_spci(stdin=":bye\n",
+        _, err, rc = run_spci(stdin="bye!\n",
             args=["--name", "C1", "--bus", BUS, str(p1)], timeout=4)
         self.assertEqual(rc, 0, err)
         time.sleep(0.4)
@@ -841,13 +1357,13 @@ class TestMesh(TimedTestCase):
         # touch the file to ensure it stays (SIGKILL may have left it anyway)
         Path(f"{BUS}/Z.sock").touch(exist_ok=True)
 
-        # second call: spco/$ should detect Z is dead (:alive false) and respawn
+        # second call: spco/$ should detect Z is dead (sp/alive? false) and respawn
         p2 = Path(d) / "second.sp"
         p2.write_text(
-            f'"{ROOT}/with-spco.sp" :require\n'
+            f'"{ROOT}/stdlib/with-spco.sp" require\n'
             '"two" [Z] spco/$\n'
         )
-        _, err, rc = run_spci(stdin=":bye\n",
+        _, err, rc = run_spci(stdin="bye!\n",
             args=["--name", "C2", "--bus", BUS, str(p2)], timeout=4)
         self.assertEqual(rc, 0, err)
         time.sleep(0.5)
@@ -868,10 +1384,10 @@ class TestMesh(TimedTestCase):
         self.addCleanup(lambda: shutil.rmtree(d, ignore_errors=True))
         prog = Path(d) / "drv.sp"
         prog.write_text(
-            f'"{ROOT}/with-spco.sp" :require\n'
+            f'"{ROOT}/stdlib/with-spco.sp" require\n'
             '[ 21 21 + ] [W2] spco/$!\n'
         )
-        _, err, rc = run_spci(stdin=":bye\n",
+        _, err, rc = run_spci(stdin="bye!\n",
             args=["--name", "C", "--bus", BUS, str(prog)], timeout=4)
         self.assertEqual(rc, 0, err)
         time.sleep(0.5)
@@ -888,11 +1404,11 @@ class TestMesh(TimedTestCase):
         self.addCleanup(lambda: shutil.rmtree(d, ignore_errors=True))
         prog = Path(d) / "drv.sp"
         prog.write_text(
-            f'"{ROOT}/with-spco.sp" :require\n'
+            f'"{ROOT}/stdlib/with-spco.sp" require\n'
             '"hi" [Y] via-spco\n'
         )
         out, err, rc = run_spci(
-            stdin=":bye\n",
+            stdin="bye!\n",
             args=["--name", "DRV2", "--bus", BUS, str(prog)],
             timeout=4,
         )
@@ -914,7 +1430,7 @@ class TestMesh(TimedTestCase):
         """
         self.start_worker("W", "[ 2 * ] [double] @\n")
         out, err, rc = run_spci(
-            stdin="[ 21 double ! ] [W] $!  :bye\n",
+            stdin="[ 21 double ! ] [W] $!  bye!\n",
             args=["--name", "A", "--bus", BUS],
             timeout=4
         )
@@ -946,7 +1462,9 @@ if __name__ == "__main__":
         suite.addTests(loader.loadTestsFromTestCase(TestStr))
         suite.addTests(loader.loadTestsFromTestCase(TestCompile))
         suite.addTests(loader.loadTestsFromTestCase(TestRequirePreprocess))
+        suite.addTests(loader.loadTestsFromTestCase(TestSpct))
         suite.addTests(loader.loadTestsFromTestCase(TestProperty))
+        suite.addTests(loader.loadTestsFromTestCase(TestSpcd))
     elif args.tests:
         for name in args.tests:
             suite.addTests(loader.loadTestsFromName(name))
@@ -955,7 +1473,9 @@ if __name__ == "__main__":
         suite.addTests(loader.loadTestsFromTestCase(TestStr))
         suite.addTests(loader.loadTestsFromTestCase(TestCompile))
         suite.addTests(loader.loadTestsFromTestCase(TestRequirePreprocess))
+        suite.addTests(loader.loadTestsFromTestCase(TestSpct))
         suite.addTests(loader.loadTestsFromTestCase(TestProperty))
+        suite.addTests(loader.loadTestsFromTestCase(TestSpcd))
         suite.addTests(loader.loadTestsFromTestCase(TestMesh))
 
     runner = unittest.TextTestRunner(verbosity=2)

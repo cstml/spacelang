@@ -1,7 +1,7 @@
-*~
-spci
-spcc
-spco
-spci.o
-libspci.a
+bin/
+build/
+lib/libspci.a
+*.o
 __pycache__/
+docs-internal
+.pi/

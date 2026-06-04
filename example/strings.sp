@@ -2,7 +2,7 @@
 {                                              }
 { Run:  ./spci example/strings.sp              }
 
-"str/str.sp" :require
+"github.com/cstml/spacelang/stdlib/str.sp" require
 
 { ----- C primitives ----- }
 
@@ -61,7 +61,6 @@
 { Implemented as a loop: while the path contains '/', advance  }
 { past the first one.                                          }
 [
-  _bn-p "/" str/contains?
   [ ]                              { else: no '/' left, done }
   [ { then: strip past the first '/' and recurse }
     _bn-p "/" str/index 1 + [_bn-start] @
@@ -69,7 +68,8 @@
     _bn-p _bn-start _bn-rest str/sub [_bn-p] @
     basename-loop
   ]
-  rot if !
+  _bn-p "/" str/contains?
+  if
 ] [basename-loop] @
 
 [ { p -- basename }
@@ -84,10 +84,10 @@
 [ { s suffix -- s' }
   [_ds-suffix] @
   [_ds-s] @
-  _ds-s _ds-suffix str/ends-with?
   [ _ds-s ]                                                             { else: not a match, return unchanged }
   [ _ds-s 0 _ds-s str/len _ds-suffix str/len - str/sub ]                 { then: strip the suffix }
-  rot if !
+  _ds-s _ds-suffix str/ends-with?
+  if
 ] [drop-suffix] @
 
 "src/lib/util/parse.sp" basename ".sp" drop-suffix .   { → "parse" }
