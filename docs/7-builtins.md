@@ -196,16 +196,16 @@ Print the value with a trailing newline.
 [1 2 +]
 ```
 
-### `,` — format print
+### `;` — print without newline
 
-`x ,`
+`x ;`
 
-Same as `.` for all current value types.
+Pretty-prints the top of stack without the trailing `\n` that `.` adds. Use it
+to compose pieces of a single output line.
 
 ```
-> "hi" , "there" ,
-"hi"
-"there"
+> "hi" ; " " ; "there" .
+"hi" "there"
 ```
 
 ### `io/slurp` — read line

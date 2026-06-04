@@ -204,6 +204,15 @@ class TestEval(TimedTestCase):
         out = self.eval('1 "1" = .');                     self.assertIn("nil", out)
         out = self.eval('[1] [2] = .');                   self.assertIn("nil", out)
 
+    def test_semicolon_no_newline(self):
+        """`;` prints without a trailing newline; `.` adds one. A line
+        composed of several `;` calls + a final `.` is a single line."""
+        out, err, rc = run_spci(stdin='`hi` ; ` ` ; `there` .\nbye!\n')
+        self.assertEqual(rc, 0, f"spci crashed:\n{err}")
+        self.assertEqual(out.count('\n'), 1, f"expected one line, got: {out!r}")
+        self.assertIn('"hi"', out)
+        self.assertIn('"there"', out)
+
     def test_strings(self):
         out = self.eval('"hello" .')
         self.assertIn('"hello"', out)

@@ -103,7 +103,7 @@ right away. To push a thunk as data, bind it double-wrapped:
 **I/O:**
 ```
 .     { x → print x with newline }
-,     { x → format and print (same as . for now) }
+;     { x → print without trailing newline (companion of .) }
 io/slurp { → read a line from stdin, push as string (newline stripped) }
 eval  { string → feed it to the interpreter }
 ```

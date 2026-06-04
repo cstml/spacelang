@@ -43,7 +43,7 @@ One file per built-in word. Each spec covers stack effect, semantics, an example
 ## I/O
 
 - [`.`](words/print.md)
-- [`,`](words/comma.md)
+- [`;`](words/semicolon.md)
 - [`io/slurp`](words/slurp.md)
 - [`eval`](words/eval.md)
 

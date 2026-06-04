@@ -1,7 +1,7 @@
 { A simple example of a program }
 
 "Hello, this prints the first n fibonacci numbers
-How many numbers would you like to print?" ,
+How many numbers would you like to print?" ;
 
 io/slurp eval [i] @
 

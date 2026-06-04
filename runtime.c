@@ -596,7 +596,7 @@ static Value *parse_term(Lex *L) {
     }
 
     /* single-char ops / punctuation become words too */
-    if (strchr("+-*/<>=@!.,~$:]", c)) {
+    if (strchr("+-*/<>=@!.;~$:]", c)) {
         char buf[2] = { c, 0 };
         L->i++;
         return v_word(buf);
@@ -1231,9 +1231,9 @@ static void eval_word(const char *w) {
     if (!strcmp(w,".")) {
         Value *t = pop(); pretty(t); printf("\n"); v_unref(t); return;
     }
-    /* , format — same as print for our value repr */
-    if (!strcmp(w,",")) {
-        Value *t = pop(); pretty(t); printf("\n"); v_unref(t); return;
+    /* ; print without trailing newline */
+    if (!strcmp(w,";")) {
+        Value *t = pop(); pretty(t); v_unref(t); return;
     }
     /* ~ describe */
     if (!strcmp(w,"~")) {
